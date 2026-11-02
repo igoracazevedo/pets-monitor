@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+agent/.env
+agent/config.yaml
+agent/fotos/
+agent/*.jpg
+agent/*.pt
+__pycache__/
+.venv/

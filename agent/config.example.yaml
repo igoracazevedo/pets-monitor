@@ -1,0 +1,35 @@
+# Copie para config.yaml e ajuste. Variáveis ${NOME} vêm do arquivo .env.
+intervalo_s: 15              # tempo entre varreduras completas (todas as câmeras)
+historico_a_cada_s: 300      # com o pet parado na mesma câmera, grava no histórico a cada 5 min
+quadro_da_camera_a_cada_s: 60  # foto da câmera para a aba "Câmeras"
+largura_foto: 960            # redimensiona as fotos guardadas
+
+deteccao:
+  modelo: yolov8n.pt         # baixa sozinho na primeira vez (yolov8s.pt é mais preciso e mais pesado)
+  confianca_minima: 0.35
+  tamanho: 640
+
+identificacao:
+  # só vale com 2+ pets: precisa acertar a cor e ficar claramente à frente do outro
+  pontuacao_minima: 0.55
+  margem_minima: 0.05
+
+cameras:
+  - nome: Sala
+    ambiente: Sala de estar
+    fonte: rtsp
+    url: ${CAM_SALA_URL}
+  - nome: Cozinha
+    ambiente: Cozinha
+    fonte: rtsp
+    url: ${CAM_COZINHA_URL}
+  # câmera que só entrega foto por HTTP:
+  # - nome: Quintal
+  #   fonte: http
+  #   url: http://192.168.1.52/snapshot.jpg
+  #   usuario: admin
+  #   senha: ${CAM_QUINTAL_SENHA}
+  # teste sem câmera (usa uma imagem do disco):
+  # - nome: Teste
+  #   fonte: arquivo
+  #   caminho: exemplos/sala.jpg
