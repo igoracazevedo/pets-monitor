@@ -36,6 +36,9 @@ async function carregar(): Promise<Dados> {
 
 export default function Inicio({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
+  const [texto, setTexto] = useState('')
+  const [comandando, setComandando] = useState(false)
+  const [resposta, setResposta] = useState('')
   const { abrir, janela } = useVisualizador()
   const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [] })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
@@ -92,9 +95,6 @@ export default function Inicio({ admin }: { admin: boolean }) {
     }
   }
 
-  const [texto, setTexto] = useState('')
-  const [comandando, setComandando] = useState(false)
-  const [resposta, setResposta] = useState('')
   const sem = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   /** Linha de comando: "Mavi na Sala" -> o programa de casa tira a foto de agora da câmera, marca o pet e aprende com ela. */
   async function comando() {
