@@ -46,11 +46,11 @@ export default function Pessoas({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
-  async function enviar(id: string, arquivos: FileList) {
+  async function enviar(id: string, arquivos: File[]) {
     setEnviando(id)
     setMsg('')
     try {
-      for (const arq of Array.from(arquivos)) {
+      for (const arq of arquivos) {
         const jpeg = await reduzirImagem(arq, 1600)
         const path = `pessoas/${id}/${crypto.randomUUID()}.jpg`
         const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg' })
@@ -103,8 +103,8 @@ export default function Pessoas({ admin }: { admin: boolean }) {
         </span>
       </p>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
-      <input ref={inputCamera} type="file" accept="image/*" capture="user" hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
-      <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
+      <input ref={inputCamera} type="file" accept="image/*" capture="user" hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
+      <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
 
       {dados.pessoas.map((p) => {
         const fotos = dados.fotos.filter((f) => f.pessoa_id === p.id)

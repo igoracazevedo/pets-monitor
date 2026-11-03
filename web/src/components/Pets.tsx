@@ -55,11 +55,11 @@ export default function Pets({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
-  async function enviar(petId: string, arquivos: FileList) {
+  async function enviar(petId: string, arquivos: File[]) {
     setEnviando(petId)
     setMsg('')
     try {
-      for (const arq of Array.from(arquivos)) {
+      for (const arq of arquivos) {
         const jpeg = await reduzirImagem(arq)
         const path = `${petId}/${crypto.randomUUID()}.jpg`
         const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg' })
@@ -130,8 +130,8 @@ export default function Pets({ admin }: { admin: boolean }) {
     <div className="space-y-4">
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
       <input ref={inputPerfil} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => { const a = e.target.files?.[0]; const p = alvoPerfil.current; e.target.value = ''; if (a && p) void trocarPerfil(p, a) }} />
-      <input ref={inputCamera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
-      <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => e.target.files?.length && alvo.current && void enviar(alvo.current, e.target.files).then(() => input.current && (input.current.value = ''))} />
+      <input ref={inputCamera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
+      <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ''; if (f.length && alvo.current) void enviar(alvo.current, f) }} />
 
       {dados.pets.map((p) => {
         const fotos = dados.fotos.filter((f) => f.pet_id === p.id)
