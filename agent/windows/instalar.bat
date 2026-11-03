@@ -8,11 +8,11 @@ call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements.txt || (echo Falha ao instalar as dependencias. & pause & exit /b 1)
 if not exist .env copy .env.example .env >nul
-if not exist config.yaml copy config.nvr.example.yaml config.yaml >nul
+if not exist config.yaml copy config.camera-properties.yaml config.yaml >nul
 echo.
 echo Pronto. Agora:
 echo   1. Abra o arquivo .env e preencha SUPABASE_URL, SUPABASE_SERVICE_KEY e os dados do NVR.
-echo   2. Abra o config.yaml e ajuste os nomes e canais das cameras.
+echo   2. Copie o seu camera.properties (o mesmo do outro app) para esta pasta.
 echo   3. Rode windows\testar.bat para conferir uma camera.
 echo   4. Rode windows\iniciar.bat (ou windows\iniciar-com-o-windows.bat para subir sozinho).
 pause

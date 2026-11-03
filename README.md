@@ -19,8 +19,8 @@ Importe o repositório com **Root Directory = `web`**. Variáveis (opcionais, j�
 Pré-requisito: Python 3.11 ou 3.12 (python.org, marcando "Add to PATH"). O PC precisa ficar ligado e na mesma rede do NVR.
 
 1. Copie a pasta `agent` para o PC (ex.: `C:\PetsMonitor`) e dê dois cliques em `windows\instalar.bat`.
-2. Edite o `.env`: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (chave *service_role*, só neste PC) e `NVR_IP`, `NVR_USUARIO`, `NVR_SENHA`.
-3. Edite o `config.yaml`: nomes dos ambientes e o **canal** de cada câmera no NVR.
+2. Edite o `.env`: `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` (chave *service_role*, só neste PC).
+3. Copie o seu **`camera.properties`** (o mesmo do outro app) para a pasta `agent`. Ele é lido como está: câmeras `intelbras` (foto por HTTP, com RTSP de reserva) e `rtsp` (conexão mantida aberta). O arquivo nunca vai para o git. Alternativa com NVR: `config.nvr.example.yaml`.
 4. `windows\testar.bat` confere uma câmera (mostra se achou cachorro).
 5. `windows\iniciar.bat` começa a varrer. Para subir sozinho ao entrar no Windows, rode `windows\iniciar-com-o-windows.bat`.
 

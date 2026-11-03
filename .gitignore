@@ -10,3 +10,4 @@ __pycache__/
 .venv/
 agent/tamanhos.json
 agent/.env
+agent/camera.properties

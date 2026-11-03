@@ -5,6 +5,8 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from .camera_props import carregar_cameras
+
 RAIZ = Path(__file__).resolve().parent.parent
 
 
@@ -31,6 +33,12 @@ def carregar(caminho: str | None = None) -> dict:
     if not arq.exists():
         raise SystemExit(f"Não achei {arq}. Copie config.example.yaml para config.yaml e ajuste.")
     cfg = _expandir(yaml.safe_load(arq.read_text(encoding="utf-8")))
+    # câmeras podem vir do camera.properties (o mesmo arquivo do outro app) em vez de listadas no YAML
+    arq_cam = cfg.get("cameras_arquivo") or ("camera.properties" if not cfg.get("cameras") and (RAIZ / "camera.properties").exists() else None)
+    if arq_cam:
+        p = Path(arq_cam)
+        cfg["cameras"] = carregar_cameras(p if p.is_absolute() else (arq.parent / p if (arq.parent / p).exists() else RAIZ / p))
+    cfg.setdefault("cameras", [])
     cfg.setdefault("intervalo_s", 15)
     cfg.setdefault("historico_a_cada_s", 300)
     cfg.setdefault("quadro_da_camera_a_cada_s", 60)

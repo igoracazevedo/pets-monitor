@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from urllib.parse import quote
 
 import cv2
@@ -43,11 +45,86 @@ def url_nvr(cam: dict) -> str:
     return f"rtsp://{quote(usuario, safe='')}:{quote(senha, safe='')}@{ip}:{porta}/cam/realmonitor?channel={int(cam['canal'])}&subtype={int(cam.get('subtipo', 1))}"
 
 
+def _snapshot_intelbras(cam: dict) -> np.ndarray:
+    """Foto por HTTP (padrão Dahua/Intelbras), com login Digest e, se a câmera preferir, Basic."""
+    from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+
+    url = f"http://{cam['host']}/cgi-bin/snapshot.cgi"
+    ultimo = None
+    for auth in (HTTPDigestAuth(cam["usuario"], cam["senha"]), HTTPBasicAuth(cam["usuario"], cam["senha"])):
+        try:
+            r = requests.get(url, auth=auth, timeout=8)
+            if r.ok and r.content[:2] == b"\xff\xd8":
+                img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+                if img is not None:
+                    return img
+            ultimo = f"HTTP {r.status_code}"
+        except requests.RequestException as e:
+            ultimo = str(e)[:80]
+    raise RuntimeError(ultimo or "sem resposta")
+
+
+def _intelbras(cam: dict) -> np.ndarray:
+    try:
+        return _snapshot_intelbras(cam)
+    except Exception as e_http:
+        url = f"rtsp://{quote(cam['usuario'], safe='')}:{quote(cam['senha'], safe='')}@{cam['host']}:554/cam/realmonitor?channel=1&subtype=1"
+        try:
+            return _rtsp(url)
+        except Exception as e_rtsp:
+            raise RuntimeError(f"foto HTTP falhou ({e_http}); RTSP falhou ({e_rtsp})")
+
+
+class _Fluxo(threading.Thread):
+    """Mantém uma câmera RTSP conectada o tempo todo e guarda só o quadro mais recente."""
+
+    def __init__(self, url: str):
+        super().__init__(daemon=True)
+        self.url, self.quadro, self.ts, self.erro = url, None, 0.0, "conectando"
+        self.start()
+
+    def run(self):
+        while True:
+            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+            if not cap.isOpened():
+                self.erro = "não conectou (confira IP, usuário/senha e o RTSP da câmera)"
+                time.sleep(5)
+                continue
+            falhas = 0
+            while falhas < 30:
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    self.quadro, self.ts, self.erro, falhas = frame, time.time(), None, 0
+                else:
+                    falhas += 1
+                    time.sleep(0.2)
+            cap.release()
+            self.erro = "conexão perdida; reconectando"
+
+
+_fluxos: dict[str, _Fluxo] = {}
+
+
+def _continuo(url: str) -> np.ndarray:
+    f = _fluxos.get(url) or _fluxos.setdefault(url, _Fluxo(url))
+    for _ in range(40):  # até ~8 s para o primeiro quadro
+        if f.quadro is not None:
+            break
+        time.sleep(0.2)
+    if f.quadro is None or time.time() - f.ts > 20:
+        raise RuntimeError(f.erro or "sem imagem recente")
+    return f.quadro.copy()
+
+
 def capturar(cam: dict) -> np.ndarray:
     """Um quadro da câmera (BGR). `fonte`: rtsp | http | arquivo."""
     fonte = cam.get("fonte", "rtsp")
     if fonte == "rtsp":
         return _rtsp(cam["url"])
+    if fonte == "intelbras":
+        return _intelbras(cam)
+    if fonte == "rtsp_continuo":
+        return _continuo(cam["url"])
     if fonte == "nvr":
         return _rtsp(url_nvr(cam))
     if fonte == "http":

@@ -14,6 +14,9 @@ identificacao:
   pontuacao_minima: 0.55
   margem_minima: 0.05
 
+# Usando o camera.properties do outro app? Descomente a linha abaixo e apague a lista 'cameras'.
+# cameras_arquivo: camera.properties
+
 cameras:
   - nome: Sala
     ambiente: Sala de estar
