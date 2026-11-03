@@ -8,15 +8,16 @@ import Cameras from './components/Cameras'
 import Ajustes from './components/Ajustes'
 import Pets from './components/Pets'
 import { Carregando, Entrar, SemAcesso } from './components/Entrada'
+import { Casca, type AbaDef } from './components/Casca'
 
-const abas = [
-  { id: 'inicio', nome: 'Início', Icone: PawPrint },
-  { id: 'historico', nome: 'Histórico', Icone: History },
-  { id: 'cameras', nome: 'Câmeras', Icone: CamIcon },
-  { id: 'pets', nome: 'Pets', Icone: Dog },
-  { id: 'ajustes', nome: 'Ajustes', Icone: Settings },
-] as const
-type Aba = (typeof abas)[number]['id']
+const abas: AbaDef[] = [
+  { id: 'inicio', nome: 'Início', Icone: PawPrint, ajuda: ['Cada cartão mostra a última câmera onde o pet foi visto e a foto daquele momento.', 'Toque em "Onde estão agora?" para o programa de casa olhar todas as câmeras na hora.'] },
+  { id: 'historico', nome: 'Histórico', Icone: History, ajuda: ['Lista cada vez que um pet foi visto, com a câmera, a hora e a foto.', 'Use o filtro para ver só um pet ou os animais não identificados.'] },
+  { id: 'cameras', nome: 'Câmeras', Icone: CamIcon, ajuda: ['"Ver ao vivo" tira uma foto nova de cada câmera e mostra a hora da captura.', 'Câmera nova aparece como "Câmera xxxx": toque no lápis e dê o nome do local.', 'Câmeras desativadas (em Ajustes) saem desta lista.'] },
+  { id: 'pets', nome: 'Pets', Icone: Dog, ajuda: ['Cadastre cada pet, marque o porte (maior/menor da casa) e envie fotos dele sozinho.', 'Toque no quadradinho ao lado do nome para trocar a foto de perfil.', 'O programa de casa aprende com as fotos em até 2 minutos.'] },
+  { id: 'ajustes', nome: 'Ajustes', Icone: Settings, ajuda: ['Ative ou desative câmeras.', 'Libere outros e-mails para acessar o app.'] },
+]
+type Aba = 'inicio' | 'historico' | 'cameras' | 'pets' | 'ajustes'
 
 export default function App() {
   const [sessao, setSessao] = useState<Session | null | undefined>(undefined)
@@ -40,30 +41,12 @@ export default function App() {
   if (!acesso.membro) return <SemAcesso email={sessao.user.email} />
 
   return (
-    <div className="mx-auto min-h-screen max-w-3xl pb-24">
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-[#0e7490] px-4 py-3 text-white">
-        <h1 className="flex items-center gap-2 font-extrabold">
-          <PawPrint size={20} /> Pets Monitor
-        </h1>
-        <button className="text-[12px] opacity-80" onClick={() => void supabase.auth.signOut()}>
-          Sair
-        </button>
-      </header>
-      <main className="p-4">
-        {aba === 'inicio' && <Inicio />}
-        {aba === 'historico' && <Historico />}
-        {aba === 'cameras' && <Cameras admin={acesso.admin} />}
-        {aba === 'pets' && <Pets admin={acesso.admin} />}
-        {aba === 'ajustes' && <Ajustes admin={acesso.admin} />}
-      </main>
-      <nav className="vidro fixed inset-x-3 bottom-3 mx-auto flex max-w-md justify-around p-1.5">
-        {abas.map(({ id, nome, Icone }) => (
-          <button key={id} onClick={() => setAba(id)} className={`flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold ${aba === id ? 'bg-cyan-700/10 text-cyan-800' : 'text-slate-500'}`}>
-            <Icone size={20} />
-            {nome}
-          </button>
-        ))}
-      </nav>
-    </div>
+    <Casca sessao={sessao} abas={abas} aba={aba} onAba={(id) => setAba(id as Aba)}>
+      {aba === 'inicio' && <Inicio />}
+      {aba === 'historico' && <Historico />}
+      {aba === 'cameras' && <Cameras admin={acesso.admin} />}
+      {aba === 'pets' && <Pets admin={acesso.admin} />}
+      {aba === 'ajustes' && <Ajustes admin={acesso.admin} />}
+    </Casca>
   )
 }
