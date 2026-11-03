@@ -242,7 +242,7 @@ def cmd_verificar(args):
         dets, palpites = v.analisar(frame, reg["id"], aprender=False)
         marcas = [(d.caixa, f"{p.nome or '?'}") for d, p in zip(dets, palpites)]
         arq = pasta / f"{(c.get('host') or nome).replace('.', '-')}.jpg"
-        cv2.imwrite(str(arq), _anotar(frame, marcas))
+        cv2.imwrite(str(arq), _anotar(v.proteger(frame), marcas))
         if dets:
             quem = ", ".join(f"{p.nome or 'não identificado'} ({p.como}, {d.confianca:.0%})" for d, p in zip(dets, palpites))
         else:

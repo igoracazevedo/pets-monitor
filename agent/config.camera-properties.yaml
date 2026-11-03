@@ -12,6 +12,7 @@ largura_foto: 960
 
 # Achar pessoas nas câmeras (só detecta; não reconhece quem é). false desliga.
 detectar_pessoas: true
+proteger_pessoas: true   # corpo das pessoas desfocado nas imagens enviadas; só o rosto fica nítido
 
 deteccao:
   modelo: yolov8s.pt

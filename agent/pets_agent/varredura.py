@@ -9,6 +9,7 @@ import numpy as np
 
 from . import capture
 from .identify import Identificador, Palpite, caracteristica
+from .privacidade import desfocar_pessoas
 from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
 from .store import Supabase, agora
 
@@ -76,6 +77,22 @@ class Varredura:
         self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
         self.ultimo_quadro: dict[str, float] = {}
         self.falhas: dict[str, tuple[int, float]] = {}  # câmera -> (falhas seguidas, só tenta de novo depois de)
+
+    def proteger(self, frame):
+        """Imagem que pode sair do PC: corpo das pessoas desfocado, só o rosto nítido (desligue com proteger_pessoas: false)."""
+        if not self.cfg.get("proteger_pessoas", True):
+            return frame
+        try:
+            caixas = self.detector.pessoas_na_imagem(frame) if hasattr(self.detector, "pessoas_na_imagem") else []
+            if not caixas:
+                return frame
+            if self.rostos is None:
+                from .rostos import Rostos
+
+                self.rostos = Rostos()
+            return desfocar_pessoas(frame, caixas, self.rostos)
+        except Exception as e:  # sem a proteção a imagem NÃO é enviada: melhor sem foto do que com a pessoa à mostra
+            raise RuntimeError(f"não consegui proteger a imagem ({e})")
 
     def recarregar_pets(self):
         self.pets = self.db.pets()
@@ -233,10 +250,17 @@ class Varredura:
             marcas.append((d.caixa, p.nome or "?"))
 
         agora_ts = time.time()
+        publico = []  # imagem protegida, calculada só se alguma foto for mesmo enviada
+
+        def imagem_publica():
+            if not publico:
+                publico.append(_anotar(self.proteger(frame), marcas))
+            return publico[0]
+
         quadro_path = None
         if agora_ts - self.ultimo_quadro.get(cid, 0) >= self.cfg["quadro_da_camera_a_cada_s"]:
             quadro_path = f"cameras/{cid}.jpg"
-            self.db.enviar_foto(quadro_path, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
+            self.db.enviar_foto(quadro_path, _jpeg(imagem_publica(), self.cfg["largura_foto"]))
             self.ultimo_quadro[cid] = agora_ts
         self.db.status_camera(reg["id"], True, quadro_path=quadro_path)
 
@@ -266,7 +290,7 @@ class Varredura:
             if relevante:
                 if foto is None:
                     foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{cid[:8]}-{datetime.now():%H%M%S}.jpg"
-                    self.db.enviar_foto(foto, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
+                    self.db.enviar_foto(foto, _jpeg(imagem_publica(), self.cfg["largura_foto"]))
                 self.db.avistamento({**pos, "identificacao": p.como, "pet_id": p.pet_id, "pessoa_id": p.pessoa_id, "especie": d.especie, "snapshot_path": foto})
                 self.ultimo[chave] = {"camera": cid, "ts": agora_ts, "foto": foto, "foto_em": agora(), "caixa": d.caixa}
                 self.avisar(p, nome, foto)
@@ -341,7 +365,7 @@ class Varredura:
                 return 0
             try:
                 caminho = f"ao-vivo/{reg['id']}.jpg"
-                self.db.enviar_foto(caminho, _jpeg(capture.capturar(c), self.cfg["largura_foto"]))
+                self.db.enviar_foto(caminho, _jpeg(self.proteger(capture.capturar(c)), self.cfg["largura_foto"]))
                 self.db.status_camera(reg["id"], True, quadro_path=caminho)
                 return 1
             except Exception as e:

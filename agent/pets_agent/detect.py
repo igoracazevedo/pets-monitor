@@ -76,6 +76,11 @@ class Detector:
             refinadas.extend(self._separar(frame, d) if d.especie != "pessoa" else [d])
         return sem_repetidas(refinadas)
 
+    def pessoas_na_imagem(self, frame: np.ndarray, conf: float = 0.25) -> list[tuple[int, int, int, int]]:
+        """Caixas de TODA pessoa visível, mesmo com pouca certeza: é para esconder o corpo, então melhor sobrar do que faltar."""
+        res = self.modelo.predict(frame, imgsz=self.tamanho, conf=conf, classes=list(PESSOA), iou=0.85, verbose=False)[0]
+        return [tuple(int(v) for v in b.xyxy[0].tolist()) for b in res.boxes]
+
     def _separar(self, frame: np.ndarray, d: Deteccao) -> list[Deteccao]:
         """Animais deitados juntos saem numa caixa só. Amplia a região e procura de novo: se achar 2 ou mais, troca a caixa por elas."""
         x1, y1, x2, y2 = d.caixa

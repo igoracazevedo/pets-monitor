@@ -25,19 +25,35 @@ class Rostos:
         self._det = None
         self._rec = None
 
-    def _carregar(self):
-        if self._det is not None:
-            return
+    def _baixar(self, nome: str):
         self.pasta.mkdir(exist_ok=True)
-        for nome, url in MODELOS.items():
-            arq = self.pasta / nome
-            if not arq.exists() or arq.stat().st_size < 100_000:
-                print(f"Baixando modelo de rosto {nome} (só na primeira vez)...", flush=True)
-                r = requests.get(url, timeout=120)
-                r.raise_for_status()
-                arq.write_bytes(r.content)
-        self._det = cv2.FaceDetectorYN_create(str(self.pasta / "face_detection_yunet_2023mar.onnx"), "", (320, 320), 0.85, 0.3, 5000)
-        self._rec = cv2.FaceRecognizerSF_create(str(self.pasta / "face_recognition_sface_2021dec.onnx"), "")
+        arq = self.pasta / nome
+        if not arq.exists() or arq.stat().st_size < 100_000 and "yunet" not in nome:
+            print(f"Baixando modelo de rosto {nome} (só na primeira vez)...", flush=True)
+            r = requests.get(MODELOS[nome], timeout=120)
+            r.raise_for_status()
+            arq.write_bytes(r.content)
+
+    def _carregar_detector(self):
+        if self._det is None:
+            self._baixar("face_detection_yunet_2023mar.onnx")
+            self._det = cv2.FaceDetectorYN_create(str(self.pasta / "face_detection_yunet_2023mar.onnx"), "", (320, 320), 0.7, 0.3, 5000)
+
+    def _carregar(self):
+        self._carregar_detector()
+        if self._rec is None:
+            self._baixar("face_recognition_sface_2021dec.onnx")
+            self._rec = cv2.FaceRecognizerSF_create(str(self.pasta / "face_recognition_sface_2021dec.onnx"), "")
+
+    def caixas(self, img: np.ndarray) -> list[tuple[int, int, int, int]]:
+        """Só onde há rostos (x, y, largura, altura), sem reconhecer ninguém. Rosto pequeno é ampliado antes de procurar."""
+        self._carregar_detector()
+        h, w = img.shape[:2]
+        k = 1.0 if max(h, w) >= 320 else 320 / max(h, w)
+        grande = cv2.resize(img, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC) if k > 1 else img
+        self._det.setInputSize((grande.shape[1], grande.shape[0]))
+        _, faces = self._det.detect(grande)
+        return [(int(f[0] / k), int(f[1] / k), int(f[2] / k), int(f[3] / k)) for f in (faces if faces is not None else [])]
 
     def rostos(self, img: np.ndarray) -> list[tuple[tuple[int, int, int, int], np.ndarray]]:
         """Cada rosto achado: (caixa x, y, w, h, vetor de 128 números). Ordem: do maior para o menor."""

@@ -331,3 +331,22 @@ dbu = BancoFalso()
 vu = Varredura(cfg3, dbu, DetectorUrso())
 assert "ninguém" in vu.todas()[0] and not dbu.avist
 print("urso de pelúcia grande ignorado: ok")
+
+
+def test_privacidade():
+    import numpy as np
+    from pets_agent.privacidade import desfocar_pessoas
+
+    class R:
+        def caixas(self, img):
+            return [(40, 10, 20, 20)]
+
+    rng = np.random.default_rng(1)
+    f = rng.integers(0, 255, (200, 120, 3), dtype=np.uint8)
+    out = desfocar_pessoas(f, [(20, 0, 100, 190)], R())
+    corpo = (slice(100, 180), slice(30, 90))
+    assert not np.array_equal(out[corpo], f[corpo]) and out[corpo].std() < f[corpo].std()
+    assert np.array_equal(out[12:28, 58:70], f[12:28, 58:70])  # rosto (40+20 offset) preservado
+    assert np.array_equal(out[:, :10], f[:, :10])
+    print("privacidade: corpo desfocado, rosto nítido: ok")
+test_privacidade()
