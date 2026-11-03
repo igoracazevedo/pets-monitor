@@ -145,7 +145,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
   return (
     <div className="space-y-4">
       {janela}
-      <button className="pilula" disabled={buscando} onClick={() => void localizar()}>
+      <button className="botao-principal w-full sm:w-auto" disabled={buscando} onClick={() => void localizar()}>
         <RefreshCw size={16} className={buscando ? 'animate-spin' : ''} /> {buscando ? 'Procurando nas câmeras…' : 'Onde estão agora?'}
       </button>
       <form
@@ -157,7 +157,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
       >
         <div className="flex gap-2">
           <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={`Ex.: ${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}`} className="min-w-0 flex-1" disabled={comandando} />
-          <button type="submit" className="pilula shrink-0" disabled={comandando || !texto.trim()}>
+          <button type="submit" className="botao-principal compacto shrink-0" disabled={comandando || !texto.trim()}>
             Identificar
           </button>
         </div>

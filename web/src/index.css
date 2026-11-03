@@ -36,3 +36,16 @@ input:focus, select:focus { border-color: rgba(14, 116, 144, 0.6); }
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
 }
+
+/* Botão principal (padrão IAZ): sólido azul-petróleo, cantos grandes, sombra suave */
+.botao-principal {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: linear-gradient(135deg, #0e7490 0%, #0b5f77 100%);
+  color: #fff; font-weight: 600; font-size: 15px;
+  padding: 0.85rem 1.25rem; border-radius: 1.1rem; border: 0;
+  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.botao-principal:active { transform: scale(0.98); box-shadow: 0 5px 14px rgba(14, 116, 144, 0.3); }
+.botao-principal:disabled { opacity: 0.65; }
+.botao-principal.compacto { font-size: 14px; padding: 0.55rem 1rem; border-radius: 0.9rem; }
