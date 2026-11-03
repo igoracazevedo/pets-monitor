@@ -200,8 +200,8 @@ class Varredura:
         dets_ok, palpites = [], []
         for d in dets:
             p = self.ident.palpite(caracteristica(frame, d.caixa), usados)
-            if d.fraca and not (p.pet_id and p.pontuacao >= 0.6):
-                continue  # brinquedo ou coisa parecida
+            if d.fraca and (area_relativa(d.caixa, frame.shape) > 0.05 or not (p.pet_id and p.pontuacao >= 0.6)):
+                continue  # brinquedo ou coisa parecida (urso de pelúcia grande na cama: grande demais e/ou cor diferente)
             if p.pet_id:
                 usados.add(p.pet_id)  # um pet aparece uma vez por quadro
                 if aprender and p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite

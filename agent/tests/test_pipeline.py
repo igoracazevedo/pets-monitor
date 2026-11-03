@@ -287,3 +287,47 @@ assert len(juntos) == 2
 repetido = sem_repetidas([Deteccao("cachorro", 0.8, (100, 100, 300, 300)), Deteccao("cachorro", 0.5, (105, 102, 298, 302), True)])
 assert len(repetido) == 1 and not repetido[0].fraca
 print("vários animais na mesma foto: ok")
+
+
+# ---- cama em volta do animal não é segundo animal; dois bichos juntos são separados na 2ª passada ----
+cama = sem_repetidas([Deteccao("cachorro", 0.7, (355, 80, 445, 200)), Deteccao("cachorro", 0.33, (320, 0, 450, 230), True)])
+assert len(cama) == 1 and not cama[0].fraca   # a caixa grande que engloba o cachorro some
+
+import types
+class CaixaFalsa:
+    def __init__(self, cls, conf, xyxy): self.cls, self.conf, self.xyxy = [cls], [conf], [types.SimpleNamespace(tolist=lambda xyxy=xyxy: xyxy)]
+class ModeloFalso:
+    n = 0
+    def predict(self, img, **k):
+        ModeloFalso.n += 1
+        if ModeloFalso.n == 1:   # 1ª passada: uma caixa só para os dois
+            return [types.SimpleNamespace(boxes=[CaixaFalsa(16, 0.7, [100, 100, 220, 200])])]
+        h, w = img.shape[:2]      # zoom: dois bichos separados na região ampliada
+        return [types.SimpleNamespace(boxes=[CaixaFalsa(16, 0.8, [w * .3, h * .2, w * .6, h * .8]), CaixaFalsa(77, 0.5, [w * .1, h * .4, w * .3, h * .8])])]
+from pets_agent.detect import Detector
+det = Detector.__new__(Detector)
+det.modelo, det.confianca, det.confianca_fraca, det.tamanho, det.pessoas = ModeloFalso(), 0.25, 0.3, 960, False
+achados = det.detectar(np.full((480, 640, 3), 128, np.uint8))
+assert len(achados) == 2, achados
+print("separar animais juntos: ok")
+
+
+# ---- pessoa com confiança baixa (travesseiro, roupa) não conta ----
+class ModeloPessoa:
+    def predict(self, img, **k):
+        return [types.SimpleNamespace(boxes=[CaixaFalsa(0, 0.46, [10, 10, 100, 200]), CaixaFalsa(0, 0.78, [300, 10, 400, 200])])]
+det2 = Detector.__new__(Detector)
+det2.modelo, det2.confianca, det2.confianca_fraca, det2.confianca_pessoa, det2.tamanho, det2.pessoas = ModeloPessoa(), 0.25, 0.3, 0.55, 960, True
+gente2 = det2.detectar(np.full((480, 640, 3), 128, np.uint8))
+assert len(gente2) == 1 and gente2[0].confianca == 0.78
+print("pessoa só com confiança alta: ok")
+
+
+# ---- "urso de pelúcia" grande demais não vira pet, mesmo com cor parecida ----
+class DetectorUrso(DetectorFalso):
+    def detectar(self, frame):
+        return [Deteccao("cachorro", 0.72, (60, 40, 560, 440), True)]  # ocupa 65% do quadro
+dbu = BancoFalso()
+vu = Varredura(cfg3, dbu, DetectorUrso())
+assert "ninguém" in vu.todas()[0] and not dbu.avist
+print("urso de pelúcia grande ignorado: ok")

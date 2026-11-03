@@ -24,7 +24,7 @@ export default function Historico({ admin }: { admin: boolean }) {
   )
   async function naoEPet(a: Avistamento) {
     if (a.x == null || a.y == null || a.w == null || a.h == null) return
-    if (!confirm('Isso não é um pet? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.')) return
+    if (!confirm(a.especie === 'pessoa' ? 'Não há pessoa aqui? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.' : 'Isso não é um pet? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.')) return
     try {
       const n = await marcarComoObjeto(a.camera_id, a.x, a.y, a.w, a.h)
       alert(n > 1 ? `Pronto. Apaguei também ${n - 1} registro(s) iguais desse lugar.` : 'Pronto. Esse lugar será ignorado.')
@@ -159,7 +159,7 @@ export default function Historico({ admin }: { admin: boolean }) {
                     )}
                   </select>
                   <button className="text-[11px] font-semibold text-rose-600" onClick={() => void naoEPet(a)}>
-                    Não é pet
+                    {a.especie === 'pessoa' ? 'Não é pessoa' : 'Não é pet'}
                   </button>
                 </div>
               )}

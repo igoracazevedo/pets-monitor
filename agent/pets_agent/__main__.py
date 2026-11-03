@@ -15,7 +15,7 @@ def _detector(cfg):
     from .detect import Detector
 
     d = cfg["deteccao"]
-    return Detector(d["modelo"], d["confianca_minima"], d["tamanho"], d.get("confianca_fraca", 0.3), cfg.get("detectar_pessoas", True))
+    return Detector(d["modelo"], d["confianca_minima"], d["tamanho"], d.get("confianca_fraca", 0.3), cfg.get("detectar_pessoas", True), d.get("confianca_pessoa", 0.55))
 
 
 def cmd_testar(args):

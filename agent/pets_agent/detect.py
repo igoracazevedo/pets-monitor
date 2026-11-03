@@ -25,19 +25,31 @@ def _iou(a, b) -> float:
     return inter / uni if uni > 0 else 0.0
 
 
+def _dentro(a, b) -> float:
+    """Fração da caixa `a` que está dentro da caixa `b`."""
+    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    area = (a[2] - a[0]) * (a[3] - a[1])
+    return (ix * iy) / area if area > 0 else 0.0
+
+
 def sem_repetidas(dets: list["Deteccao"]) -> list["Deteccao"]:
     """O mesmo animal às vezes sai com dois rótulos (cachorro e "urso de pelúcia", ou cachorro e gato): fica o mais confiável.
     Dois animais juntos NÃO são juntados: só some a caixa que quase coincide com outra (sobreposição > 70%)."""
     ordem = sorted(dets, key=lambda d: (d.fraca, -d.confianca))  # fortes primeiro
     ficam: list[Deteccao] = []
     for d in ordem:
-        if all(_iou(d.caixa, f.caixa) < 0.7 for f in ficam):
-            ficam.append(d)
+        if any(_iou(d.caixa, f.caixa) >= 0.7 for f in ficam):
+            continue
+        # caixa duvidosa que engloba um animal já achado é a cama/almofada em volta dele, não um segundo animal
+        if d.fraca and any(not f.fraca and f.especie != "pessoa" and _dentro(f.caixa, d.caixa) > 0.6 for f in ficam):
+            continue
+        ficam.append(d)
     return sorted(ficam, key=lambda d: -d.confianca)
 
 
 class Detector:
-    def __init__(self, modelo: str, confianca: float, tamanho: int, confianca_fraca: float = 0.3, pessoas: bool = False):
+    def __init__(self, modelo: str, confianca: float, tamanho: int, confianca_fraca: float = 0.3, pessoas: bool = False, confianca_pessoa: float = 0.55):
         from ultralytics import YOLO  # importa aqui: demora e só é preciso ao detectar
 
         self.modelo = YOLO(modelo)
@@ -45,6 +57,7 @@ class Detector:
         self.confianca_fraca = max(confianca, confianca_fraca)
         self.tamanho = tamanho
         self.pessoas = pessoas
+        self.confianca_pessoa = max(confianca, confianca_pessoa)  # travesseiro, roupa na cama e sombra parecem gente com 40-50%
 
     def detectar(self, frame: np.ndarray, com_fracas: bool = True) -> list[Deteccao]:
         classes = list(FORTES) + (list(FRACAS) if com_fracas else []) + (list(PESSOA) if self.pessoas else [])
@@ -53,8 +66,40 @@ class Detector:
         for b in res.boxes:
             cls, conf = int(b.cls[0]), float(b.conf[0])
             fraca = cls in FRACAS
-            if fraca and conf < self.confianca_fraca:
+            if (fraca and conf < self.confianca_fraca) or (cls in PESSOA and conf < self.confianca_pessoa):
                 continue
             x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
             out.append(Deteccao((FORTES | FRACAS | PESSOA)[cls], conf, (x1, y1, x2, y2), fraca))
-        return sem_repetidas(out)
+        out = sem_repetidas(out)
+        refinadas: list[Deteccao] = []
+        for d in out:
+            refinadas.extend(self._separar(frame, d) if d.especie != "pessoa" else [d])
+        return sem_repetidas(refinadas)
+
+    def _separar(self, frame: np.ndarray, d: Deteccao) -> list[Deteccao]:
+        """Animais deitados juntos saem numa caixa só. Amplia a região e procura de novo: se achar 2 ou mais, troca a caixa por elas."""
+        x1, y1, x2, y2 = d.caixa
+        h, w = frame.shape[:2]
+        bw, bh = x2 - x1, y2 - y1
+        if bw < 24 or bh < 24 or bw * bh > 0.25 * w * h:
+            return [d]
+        px, py = int(bw * 0.3), int(bh * 0.3)
+        ox1, oy1, ox2, oy2 = max(0, x1 - px), max(0, y1 - py), min(w, x2 + px), min(h, y2 + py)
+        recorte = frame[oy1:oy2, ox1:ox2]
+        escala = 640 / max(recorte.shape[:2])
+        if escala < 1.5:
+            return [d]
+        import cv2
+
+        grande = cv2.resize(recorte, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC)
+        res = self.modelo.predict(grande, imgsz=640, conf=max(0.15, self.confianca * 0.7), classes=list(FORTES) + list(FRACAS), iou=0.85, verbose=False)[0]
+        subs = []
+        for b in res.boxes:
+            cls, conf = int(b.cls[0]), float(b.conf[0])
+            fraca = cls in FRACAS
+            if fraca and conf < self.confianca_fraca:
+                continue
+            a1, b1, a2, b2 = (v / escala for v in b.xyxy[0].tolist())
+            subs.append(Deteccao((FORTES | FRACAS)[cls], conf, (int(ox1 + a1), int(oy1 + b1), int(ox1 + a2), int(oy1 + b2)), fraca))
+        subs = sem_repetidas(subs)
+        return subs if len(subs) >= 2 else [d]
