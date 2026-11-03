@@ -434,7 +434,8 @@ def cmd_varrer(args):
                         print(time.strftime("%H:%M:%S"), "[pedido]", linha, flush=True)
                     ultima_varredura = time.time()
                 elif "fotos" in tipos:
-                    print(time.strftime("%H:%M:%S"), f"[fotos] {v.fotos_agora()} câmera(s)", flush=True)
+                    ids = {p.get("camera_id") for p in pedidos if p.get("tipo") == "fotos"}
+                    print(time.strftime("%H:%M:%S"), f"[fotos] {v.fotos_agora(None if None in ids else ids)} câmera(s)", flush=True)
                 db.atender_pedidos([p["id"] for p in pedidos])
             elif ini - ultima_varredura >= cfg["intervalo_s"]:
                 ultima_varredura = ini

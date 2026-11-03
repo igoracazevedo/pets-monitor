@@ -58,7 +58,7 @@ class Supabase:
         return r.content
 
     def pedidos_pendentes(self) -> list[dict]:
-        return self._rest("GET", "pm_pedidos", {"select": "id,tipo", "atendido_em": "is.null"})
+        return self._rest("GET", "pm_pedidos", {"select": "id,tipo,camera_id", "atendido_em": "is.null"})
 
     def atender_pedidos(self, ids: list[str]):
         for i in ids:

@@ -250,4 +250,7 @@ alter table public.pm_correcoes enable row level security;
 drop policy if exists pm_correcoes_admin on public.pm_correcoes;
 create policy pm_correcoes_admin on public.pm_correcoes for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- "Bater foto" de uma câmera só (camera_id vazio = todas as câmeras)
+alter table public.pm_pedidos add column if not exists camera_id uuid references public.pm_cameras(id) on delete cascade;
+
 notify pgrst, 'reload schema';

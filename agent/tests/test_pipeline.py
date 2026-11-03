@@ -271,3 +271,10 @@ assert principal.aprender_correcoes(dbc) == 1 and dbc.feitas == ["c1"]
 perfil_novo = dbc.salvos[0]
 assert sum(1 for a in perfil_novo["hists"] if a["o"] == "camera") == 1 and sum(1 for a in perfil_novo["hists"] if a["o"] == "foto") == 1
 print("correção do histórico aprendida: ok")
+
+
+# ---- "bater foto" de uma câmera só ----
+dbf = BancoFalso()
+vf = Varredura({**cfg3, "cameras": [{"nome": "A", "fonte": "arquivo", "caminho": str(tmp / "sala.jpg")}, {"nome": "B", "fonte": "arquivo", "caminho": str(tmp / "sala.jpg")}]}, dbf, DetectorFalso())
+assert vf.fotos_agora({"cam-B"}) == 1 and vf.fotos_agora() == 2 and dbf.fotos.count("ao-vivo/cam-B.jpg") == 2 and dbf.fotos.count("ao-vivo/cam-A.jpg") == 1
+print("bater foto: ok")

@@ -332,12 +332,12 @@ class Varredura:
                 saida.append(f"{r['nome']}: ERRO {e}")
         return saida
 
-    def fotos_agora(self) -> int:
+    def fotos_agora(self, apenas: set[str] | None = None) -> int:
         """Uma foto nova de cada câmera, em paralelo (botão 'Ver ao vivo' do site). Guarda a hora em foto_em."""
 
         def um(par):
             c, reg = par
-            if reg.get("ativo") is False:
+            if reg.get("ativo") is False or (apenas is not None and reg["id"] not in apenas):
                 return 0
             try:
                 caminho = f"ao-vivo/{reg['id']}.jpg"

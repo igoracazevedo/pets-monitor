@@ -11,6 +11,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   const [apelido, setApelido] = useState('')
   const [msg, setMsg] = useState('')
   const [buscando, setBuscando] = useState(false)
+  const [batendo, setBatendo] = useState<string | null>(null)
   const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string> }>(
     async () => {
       const { data, error } = await supabase.from('pm_cameras').select('*').order('ordem').order('nome')
@@ -23,11 +24,12 @@ export default function Cameras({ admin }: { admin: boolean }) {
   )
 
   // "Ver ao vivo": pede ao programa de casa uma foto nova de cada câmera e mostra a hora de cada captura
-  async function verAoVivo() {
-    setBuscando(true)
+  async function pedirFotos(cameraId?: string) {
+    if (cameraId) setBatendo(cameraId)
+    else setBuscando(true)
     setMsg('')
     try {
-      const { data, error } = await supabase.from('pm_pedidos').insert({ tipo: 'fotos' }).select('id').single()
+      const { data, error } = await supabase.from('pm_pedidos').insert({ tipo: 'fotos', camera_id: cameraId ?? null }).select('id').single()
       if (error || !data) throw error ?? new Error('não consegui enviar o pedido')
       let atendido = false
       for (let i = 0; i < 20 && !atendido; i++) {
@@ -41,6 +43,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
       setMsg(e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e))
     } finally {
       setBuscando(false)
+      setBatendo(null)
     }
   }
 
@@ -60,7 +63,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
     <div className="space-y-3">
-      <button className="pilula" disabled={buscando} onClick={() => void verAoVivo()}>
+      <button className="pilula" disabled={buscando} onClick={() => void pedirFotos()}>
         <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
       </button>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
@@ -75,7 +78,11 @@ export default function Cameras({ admin }: { admin: boolean }) {
           const img = base ? `${base}${base.includes('?') ? '&' : '?'}t=${c.foto_em ? Date.parse(c.foto_em) : 0}` : undefined
           return (
             <article key={c.id} className={`vidro overflow-hidden ${c.ativo ? '' : 'opacity-60'}`}>
-              {img ? <img src={img} alt={c.nome} className="aspect-video w-full object-cover" /> : <div className="flex aspect-video items-center justify-center bg-slate-100 text-slate-400">sem imagem</div>}
+              {img ? (
+                <a href={img} target="_blank" rel="noreferrer">
+                  <img src={img} alt={c.nome} className="aspect-video w-full object-cover" />
+                </a>
+              ) : <div className="flex aspect-video items-center justify-center bg-slate-100 text-slate-400">sem imagem</div>}
               <div className="flex items-center justify-between gap-2 p-3">
                 <div className="min-w-0 flex-1">
                   {editando === c.id ? (
@@ -99,6 +106,14 @@ export default function Cameras({ admin }: { admin: boolean }) {
                   </p>
                   {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
                 </div>
+                <button
+                  className="pilula shrink-0 !px-3 !py-1.5 text-[12px]"
+                  disabled={batendo === c.id || buscando}
+                  onClick={() => void pedirFotos(c.id)}
+                  aria-label={`Bater foto de ${c.nome}`}
+                >
+                  <CamIcon size={14} className={batendo === c.id ? 'animate-pulse' : ''} /> {batendo === c.id ? 'Batendo…' : 'Bater foto'}
+                </button>
                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
               </div>
             </article>
