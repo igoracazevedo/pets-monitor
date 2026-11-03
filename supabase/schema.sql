@@ -154,4 +154,20 @@ alter table public.pm_cameras add column if not exists foto_em timestamptz;
 alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
 alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos'));
 
+-- Última posição: quando a foto foi tirada (a foto só muda quando o pet muda de lugar)
+alter table public.pm_ultima_posicao add column if not exists foto_em timestamptz;
+
+-- "Não é pet": lugares da câmera (ex.: urso de pelúcia grande) que o detector deve ignorar
+create table if not exists public.pm_ignorar (
+  id uuid primary key default gen_random_uuid(),
+  camera_id uuid not null references public.pm_cameras(id) on delete cascade,
+  x numeric(5, 4) not null, y numeric(5, 4) not null, w numeric(5, 4) not null, h numeric(5, 4) not null,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_ignorar enable row level security;
+drop policy if exists pm_ignorar_ler on public.pm_ignorar;
+create policy pm_ignorar_ler on public.pm_ignorar for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_ignorar_admin on public.pm_ignorar;
+create policy pm_ignorar_admin on public.pm_ignorar for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+
 notify pgrst, 'reload schema';

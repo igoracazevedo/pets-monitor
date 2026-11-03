@@ -1,7 +1,7 @@
 # Para quem tem NVR Intelbras: copie para config.yaml (cp / copy) e ajuste só os nomes e canais.
 # O IP, usuário e senha do NVR ficam no .env (NVR_IP, NVR_USUARIO, NVR_SENHA).
 intervalo_s: 15
-historico_a_cada_s: 300
+historico_a_cada_s: 0  # 0 = sem registro por tempo: só entra no histórico quando a posição muda
 quadro_da_camera_a_cada_s: 60
 largura_foto: 960
 

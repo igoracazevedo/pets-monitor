@@ -20,7 +20,7 @@ export type Camera = {
   foto_em: string | null
   ip_atual: string | null
 }
-export type Posicao = { pet_id: string; camera_id: string | null; visto_em: string; confianca: number | null; snapshot_path: string | null }
+export type Posicao = { pet_id: string; camera_id: string | null; visto_em: string; confianca: number | null; snapshot_path: string | null; foto_em: string | null; x: number | null; y: number | null; w: number | null; h: number | null }
 export type Avistamento = {
   id: number
   pet_id: string | null
@@ -29,6 +29,10 @@ export type Avistamento = {
   confianca: number | null
   identificacao: string | null
   snapshot_path: string | null
+  x: number | null
+  y: number | null
+  w: number | null
+  h: number | null
 }
 
 /** Links assinados (as fotos ficam num bucket privado). */
@@ -105,4 +109,9 @@ export async function urlsDosPets(caminhos: (string | null | undefined)[]): Prom
   const out: Record<string, string> = {}
   for (const d of data ?? []) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
   return out
+}
+
+/** "Não é pet": o detector passa a ignorar esse lugar na câmera (ex.: urso de pelúcia grande). */
+export async function marcarComoObjeto(camera_id: string, x: number, y: number, w: number, h: number) {
+  return supabase.from('pm_ignorar').insert({ camera_id, x, y, w, h })
 }

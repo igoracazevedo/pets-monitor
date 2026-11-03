@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Cat, Dog, RefreshCw } from 'lucide-react'
-import { supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
@@ -29,7 +29,7 @@ async function carregar(): Promise<Dados> {
   }
 }
 
-export default function Inicio() {
+export default function Inicio({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
   const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0 })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
@@ -51,6 +51,14 @@ export default function Inicio() {
     } finally {
       setBuscando(false)
     }
+  }
+
+  async function naoEPet(pos: Posicao) {
+    if (!pos.camera_id || pos.x == null || pos.y == null || pos.w == null || pos.h == null) return
+    if (!confirm('Isso não é este pet? O app vai ignorar esse lugar nessa câmera daqui para frente.')) return
+    await marcarComoObjeto(pos.camera_id, pos.x, pos.y, pos.w, pos.h)
+    await supabase.from('pm_ultima_posicao').delete().eq('pet_id', pos.pet_id)
+    await recarregar()
   }
 
   const cam = (id: string | null) => dados.cams.find((c) => c.id === id)
@@ -95,7 +103,18 @@ export default function Inicio() {
               {pos?.snapshot_path && dados.fotos[pos.snapshot_path] && (
                 <img src={dados.fotos[pos.snapshot_path]} alt={`${pet.nome} na última posição`} className="aspect-video w-full object-cover" />
               )}
-              {pos && <p className="px-4 py-2 text-[11px] text-slate-500">Última posição registrada em {dataHora(pos.visto_em)}</p>}
+              {pos && (
+                <div className="flex items-center justify-between gap-2 px-4 py-2 text-[11px] text-slate-500">
+                  <p>
+                    Vista {haQuanto(pos.visto_em)} · foto de {dataHora(pos.foto_em ?? pos.visto_em)}
+                  </p>
+                  {admin && (
+                    <button className="shrink-0 font-semibold text-rose-600" onClick={() => void naoEPet(pos)}>
+                      Não é ela
+                    </button>
+                  )}
+                </div>
+              )}
             </article>
           )
         })}

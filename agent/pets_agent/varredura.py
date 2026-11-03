@@ -19,6 +19,15 @@ def slug(nome: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "camera"
 
 
+def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Sobreposição entre duas caixas (x1, y1, x2, y2). 1 = mesma caixa, 0 = sem contato."""
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    uni = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / uni if uni > 0 else 0.0
+
+
 def _jpeg(frame: np.ndarray, largura: int) -> bytes:
     h, w = frame.shape[:2]
     if w > largura:
@@ -54,6 +63,7 @@ class Varredura:
         self.relatado: set[str] = set()
         self.ultima_descoberta = 0.0
         self.ultimo_nomes = 0.0
+        self.ignorar: dict[str, list[tuple[float, float, float, float]]] = {}
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
         self.ultimo: dict[str, dict] = {}
         self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
@@ -102,6 +112,12 @@ class Varredura:
             return
         self.ultimo_nomes = time.time()
         try:
+            self.ignorar = {}
+            for r in self.db.ignorar():
+                self.ignorar.setdefault(r["camera_id"], []).append((float(r["x"]), float(r["y"]), float(r["x"]) + float(r["w"]), float(r["y"]) + float(r["h"])))
+        except Exception:
+            pass  # SQL ainda não rodado: segue sem a lista
+        try:
             atuais = {c["id"]: c for c in self.db.cameras()}
         except Exception:
             return
@@ -111,7 +127,14 @@ class Varredura:
         """Acha cães/gatos no quadro e diz quem é cada um: pela cor de dia; pelo tamanho no infravermelho.
         Detecção duvidosa (ex.: "urso de pelúcia" = spitz pequeno) só vale de dia e se a cor bater com um pet."""
         noite = eh_noturno(frame)
-        dets = [d for d in self.detector.detectar(frame) if not (noite and d.fraca)]
+        h, w = frame.shape[:2]
+        marcados = self.ignorar.get(cid, [])  # lugares que você disse "não é pet" (ex.: urso de pelúcia grande)
+
+        def objeto(d) -> bool:
+            x1, y1, x2, y2 = d.caixa
+            return any(iou((x1 / w, y1 / h, x2 / w, y2 / h), m) > 0.4 for m in marcados)
+
+        dets = [d for d in self.detector.detectar(frame) if not (noite and d.fraca) and not objeto(d)]
         if dets and noite:  # infravermelho: sem cor, decide pelo tamanho
             return dets, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
         usados: set[str] = set()
@@ -162,24 +185,28 @@ class Varredura:
         for d, p in achados:
             chave = p.pet_id or f"?{cid}"
             x1, y1, x2, y2 = d.caixa
-            linha = {
-                "camera_id": reg["id"],
+            pos = {
+                "camera_id": cid,
                 "confianca": round(min(d.confianca, 0.999), 3),
-                "identificacao": p.como,
                 "x": round(x1 / w, 4), "y": round(y1 / h, 4), "w": round((x2 - x1) / w, 4), "h": round((y2 - y1) / h, 4),
             }
             ant = self.ultimo.get(chave)
-            mudou = not ant or ant["camera"] != cid or agora_ts - ant["ts"] >= self.cfg["historico_a_cada_s"]
-            if mudou:
+            # só vira item do histórico (e foto nova) quando é relevante: apareceu, mudou de câmera ou andou de verdade
+            # (ou quando você pede "Onde estão agora?", que limpa a memória e força um registro)
+            relevante = not ant or ant["camera"] != cid or iou(d.caixa, ant["caixa"]) < self.cfg.get("movimento_iou", 0.5)
+            if relevante:
                 if foto is None:
                     foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{cid[:8]}-{datetime.now():%H%M%S}.jpg"
                     self.db.enviar_foto(foto, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
-                self.db.avistamento({**linha, "pet_id": p.pet_id, "especie": d.especie, "snapshot_path": foto})
-                self.ultimo[chave] = {"camera": cid, "ts": agora_ts, "foto": foto}
+                self.db.avistamento({**pos, "identificacao": p.como, "pet_id": p.pet_id, "especie": d.especie, "snapshot_path": foto})
+                self.ultimo[chave] = {"camera": cid, "ts": agora_ts, "foto": foto, "foto_em": agora(), "caixa": d.caixa}
             else:
-                ant["ts"] = ant["ts"]  # mantém a hora do último registro no histórico
+                # parado no mesmo lugar: não grava nada novo, só atualiza a caixa de referência aos poucos (evita "arrastar" lentamente)
+                ant["caixa"] = d.caixa if iou(d.caixa, ant["caixa"]) > 0.8 else ant["caixa"]
             if p.pet_id:
-                self.db.ultima_posicao({**linha, "pet_id": p.pet_id, "visto_em": agora(), "snapshot_path": self.ultimo[chave]["foto"]})
+                ref = self.ultimo[chave]
+                # "visto_em" = última vez que o vi; "foto_em" = quando a foto foi tirada (a foto só muda quando a posição muda)
+                self.db.ultima_posicao({**pos, "pet_id": p.pet_id, "visto_em": agora(), "snapshot_path": ref["foto"], "foto_em": ref["foto_em"]})
         nomes = ", ".join(p.nome or "animal não identificado" for _, p in achados) or "ninguém"
         return f"{nome}: {nomes}"
 
@@ -188,7 +215,13 @@ class Varredura:
             self.ultimo.clear()
             self.ultimo_quadro.clear()
         self.atualizar_nomes()
-        return [self.uma_camera(c, r) for c, r in self.cameras]
+        saida = []
+        for c, r in self.cameras:
+            try:
+                saida.append(self.uma_camera(c, r))
+            except Exception as e:  # um erro numa câmera (ex.: banco recusou) não pode parar as outras
+                saida.append(f"{r['nome']}: ERRO {e}")
+        return saida
 
     def fotos_agora(self) -> int:
         """Uma foto nova de cada câmera, em paralelo (botão 'Ver ao vivo' do site). Guarda a hora em foto_em."""

@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { supabase, urlsDasFotos, type Avistamento, type Camera, type Pet } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto } from '../lib/util'
 
 type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string> }
 
-export default function Historico() {
+export default function Historico({ admin }: { admin: boolean }) {
   const [pet, setPet] = useState('todos')
-  const { dados, erro, carregando } = useDados<Dados>(
+  const { dados, erro, carregando, recarregar } = useDados<Dados>(
     async () => {
       let q = supabase.from('pm_avistamentos').select('*').order('visto_em', { ascending: false }).limit(80)
       if (pet === 'desconhecido') q = q.is('pet_id', null)
@@ -20,6 +20,15 @@ export default function Historico() {
     { pets: [], cams: [], lista: [], fotos: {} },
     20000,
   )
+  async function naoEPet(a: Avistamento) {
+    if (a.x == null || a.y == null || a.w == null || a.h == null) return
+    if (!confirm('Isso não é um pet? O app vai ignorar esse lugar nessa câmera daqui para frente.')) return
+    await marcarComoObjeto(a.camera_id, a.x, a.y, a.w, a.h)
+    await supabase.from('pm_avistamentos').delete().eq('id', a.id)
+    if (a.pet_id) await supabase.from('pm_ultima_posicao').delete().eq('pet_id', a.pet_id).eq('snapshot_path', a.snapshot_path ?? '')
+    await recarregar()
+  }
+
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
   const nomePet = (id: string | null) => (id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
 
@@ -55,6 +64,11 @@ export default function Historico() {
                   {nomeCam(a.camera_id)} · {dataHora(a.visto_em)} · {haQuanto(a.visto_em)}
                 </p>
               </div>
+              {admin && (
+                <button className="shrink-0 text-[11px] font-semibold text-rose-600" onClick={() => void naoEPet(a)}>
+                  Não é pet
+                </button>
+              )}
               {a.confianca != null && <span className="shrink-0 text-[11px] text-slate-400">{Math.round(a.confianca * 100)}%</span>}
             </li>
           ))}

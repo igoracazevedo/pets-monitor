@@ -55,6 +55,9 @@ class BancoFalso:
     def cameras(self):
         return [{"id": "cam-sn:AAA", "nome": "Sala de jantar", "ativo": True}]
 
+    def ignorar(self):
+        return []
+
     def status_camera(self, cid, ok, erro=None, quadro_path=None):
         self.status.append((cid, ok, erro))
 
@@ -147,3 +150,24 @@ pets_v2 = [
 ident2 = Identificador(pets_v2, 0.55, 0.05)
 assert ident2.palpite(caracteristica(cena(MARROM, CAIXA), CAIXA)).nome == "Mavi"
 print("perfil com amostras da câmera: ok")
+
+
+# ---- histórico: só registra quando a posição muda; "Onde estão agora?" força ----
+db3 = BancoFalso()
+cfg3 = {**cfg, "cameras": [{"nome": "Sala", "fonte": "arquivo", "caminho": str(tmp / "sala.jpg")}], "historico_a_cada_s": 0}
+v3 = Varredura(cfg3, db3, DetectorFalso())
+v3.todas(); v3.todas(); v3.todas()
+assert len(db3.avist) == 1, len(db3.avist)          # parado: um registro só
+assert all("identificacao" not in p for p in db3.pos)  # coluna que não existe em pm_ultima_posicao
+assert len(db3.pos) == 3                                # mas a última posição é atualizada a cada volta
+v3.todas(forcar=True)
+assert len(db3.avist) == 2                              # pedido do usuário força um registro novo
+class DetectorAndou(DetectorFalso):
+    n = 0
+    def detectar(self, frame):
+        DetectorAndou.n += 1
+        return [Deteccao("cachorro", 0.9, (20, 20, 120, 120) if DetectorAndou.n % 2 else (500, 300, 600, 400))]
+v4 = Varredura(cfg3, BancoFalso(), DetectorAndou())
+v4.todas(); v4.todas()
+assert len(v4.db.avist) == 2                            # andou de verdade: registra de novo
+print("histórico só com mudança relevante: ok")
