@@ -99,4 +99,28 @@ insert into storage.buckets (id, name, public) values ('pm-snapshots', 'pm-snaps
 drop policy if exists pm_snapshots_ler on storage.objects;
 create policy pm_snapshots_ler on storage.objects for select to authenticated using (bucket_id = 'pm-snapshots' and public.pm_is_membro());
 
+-- Cadastro de pets pelo site: porte (ajuda a separar à noite), fotos para ensinar e aviso para o agente reaprender
+alter table public.pm_pets add column if not exists porte text check (porte in ('pequeno', 'medio', 'grande'));
+alter table public.pm_pets add column if not exists precisa_reaprender boolean not null default false;
+
+create table if not exists public.pm_pet_fotos (
+  id uuid primary key default gen_random_uuid(),
+  pet_id uuid not null references public.pm_pets(id) on delete cascade,
+  path text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_pet_fotos enable row level security;
+drop policy if exists pm_pet_fotos_ler on public.pm_pet_fotos;
+create policy pm_pet_fotos_ler on public.pm_pet_fotos for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_pet_fotos_admin on public.pm_pet_fotos;
+create policy pm_pet_fotos_admin on public.pm_pet_fotos for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+
+insert into storage.buckets (id, name, public) values ('pm-fotos-pets', 'pm-fotos-pets', false) on conflict (id) do nothing;
+drop policy if exists pm_fotos_pets_ler on storage.objects;
+create policy pm_fotos_pets_ler on storage.objects for select to authenticated using (bucket_id = 'pm-fotos-pets' and public.pm_is_membro());
+drop policy if exists pm_fotos_pets_enviar on storage.objects;
+create policy pm_fotos_pets_enviar on storage.objects for insert to authenticated with check (bucket_id = 'pm-fotos-pets' and public.pm_is_admin());
+drop policy if exists pm_fotos_pets_apagar on storage.objects;
+create policy pm_fotos_pets_apagar on storage.objects for delete to authenticated using (bucket_id = 'pm-fotos-pets' and public.pm_is_admin());
+
 notify pgrst, 'reload schema';

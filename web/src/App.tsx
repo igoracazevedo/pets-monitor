@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Camera as CamIcon, History, PawPrint, Settings } from 'lucide-react'
+import { Camera as CamIcon, Dog, History, PawPrint, Settings } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import Inicio from './components/Inicio'
 import Historico from './components/Historico'
 import Cameras from './components/Cameras'
 import Ajustes from './components/Ajustes'
+import Pets from './components/Pets'
 
 const abas = [
   { id: 'inicio', nome: 'Início', Icone: PawPrint },
   { id: 'historico', nome: 'Histórico', Icone: History },
   { id: 'cameras', nome: 'Câmeras', Icone: CamIcon },
+  { id: 'pets', nome: 'Pets', Icone: Dog },
   { id: 'ajustes', nome: 'Ajustes', Icone: Settings },
 ] as const
 type Aba = (typeof abas)[number]['id']
@@ -73,6 +75,7 @@ export default function App() {
         {aba === 'inicio' && <Inicio />}
         {aba === 'historico' && <Historico />}
         {aba === 'cameras' && <Cameras />}
+        {aba === 'pets' && <Pets admin={acesso.admin} />}
         {aba === 'ajustes' && <Ajustes admin={acesso.admin} />}
       </main>
       <nav className="vidro fixed inset-x-3 bottom-3 mx-auto flex max-w-md justify-around p-1.5">

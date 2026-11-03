@@ -25,6 +25,18 @@ class Supabase:
     def pets(self) -> list[dict]:
         return self._rest("GET", "pm_pets", {"select": "*", "ativo": "eq.true", "order": "nome"})
 
+    def pets_para_reaprender(self) -> list[dict]:
+        return self._rest("GET", "pm_pets", {"select": "*", "precisa_reaprender": "eq.true", "ativo": "eq.true"})
+
+    def fotos_do_pet(self, pet_id: str) -> list[dict]:
+        return self._rest("GET", "pm_pet_fotos", {"select": "*", "pet_id": f"eq.{pet_id}", "order": "created_at"})
+
+    def baixar_foto_pet(self, caminho: str) -> bytes:
+        r = requests.get(f"{self.url}/storage/v1/object/pm-fotos-pets/{caminho}", headers=self.h, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"foto {caminho}: HTTP {r.status_code}")
+        return r.content
+
     def cameras(self) -> list[dict]:
         return self._rest("GET", "pm_cameras", {"select": "*", "order": "ordem,nome"})
 
@@ -42,8 +54,8 @@ class Supabase:
             corpo["ultimo_quadro_path"] = quadro_path
         self._rest("PATCH", "pm_cameras", {"id": f"eq.{camera_id}"}, json=corpo)
 
-    def salvar_perfil(self, pet_id: str, perfil: dict):
-        self._rest("PATCH", "pm_pets", {"id": f"eq.{pet_id}"}, json={"perfil": perfil})
+    def salvar_perfil(self, pet_id: str, perfil: dict | None):
+        self._rest("PATCH", "pm_pets", {"id": f"eq.{pet_id}"}, json={"perfil": perfil, "precisa_reaprender": False})
 
     def criar_pet(self, nome: str, especie: str = "cachorro") -> dict:
         return self._rest("POST", "pm_pets", json={"nome": nome, "especie": especie}, extra={"Prefer": "return=representation"})[0]

@@ -5,7 +5,8 @@ const chave = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WjgE2b2i
 
 export const supabase = createClient(url, chave)
 
-export type Pet = { id: string; nome: string; especie: string; descricao: string | null; perfil: unknown; ativo: boolean }
+export type Pet = { id: string; nome: string; especie: string; porte: string | null; descricao: string | null; perfil: unknown; ativo: boolean; precisa_reaprender: boolean }
+export type PetFoto = { id: string; pet_id: string; path: string }
 export type Camera = {
   id: string
   nome: string
@@ -36,4 +37,15 @@ export async function urlsDasFotos(caminhos: (string | null | undefined)[]): Pro
   const out: Record<string, string> = {}
   for (const d of data ?? []) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
   return out
+}
+
+/** Reduz a foto (celular gera arquivos enormes) antes de enviar. */
+export async function reduzirImagem(arquivo: File, lado = 1280): Promise<Blob> {
+  const bmp = await createImageBitmap(arquivo)
+  const k = Math.min(1, lado / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(bmp.width * k)
+  c.height = Math.round(bmp.height * k)
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height)
+  return await new Promise((ok, erro) => c.toBlob((b) => (b ? ok(b) : erro(new Error('imagem inválida'))), 'image/jpeg', 0.85))
 }

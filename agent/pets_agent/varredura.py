@@ -40,6 +40,11 @@ class Varredura:
         self.ultimo: dict[str, dict] = {}
         self.ultimo_quadro: dict[str, float] = {}
 
+    def recarregar_pets(self):
+        self.pets = self.db.pets()
+        i = self.cfg["identificacao"]
+        self.ident = Identificador(self.pets, i["pontuacao_minima"], i["margem_minima"])
+
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
         nome = cfg_cam["nome"]
         try:
