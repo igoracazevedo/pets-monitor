@@ -151,8 +151,6 @@ alter table public.pm_cameras add column if not exists ip_atual text;
 
 -- "Ver ao vivo": uma foto nova de cada câmera sob demanda, com a hora da captura
 alter table public.pm_cameras add column if not exists foto_em timestamptz;
-alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
-alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos'));
 
 -- Última posição: quando a foto foi tirada (a foto só muda quando o pet muda de lugar)
 alter table public.pm_ultima_posicao add column if not exists foto_em timestamptz;
@@ -231,8 +229,6 @@ drop policy if exists pm_push_proprio on public.pm_push;
 create policy pm_push_proprio on public.pm_push for all to authenticated
   using (public.pm_is_membro() and email = lower(coalesce(auth.jwt() ->> 'email', '')))
   with check (public.pm_is_membro() and email = lower(coalesce(auth.jwt() ->> 'email', '')));
-alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
-alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste'));
 
 -- Correções feitas no Histórico ("quem foi encontrado"): o programa de casa aprende com elas
 create table if not exists public.pm_correcoes (
