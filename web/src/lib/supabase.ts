@@ -18,6 +18,7 @@ export type Camera = {
   ultimo_erro: string | null
   ultimo_quadro_path: string | null
   foto_em: string | null
+  ip_atual: string | null
 }
 export type Posicao = { pet_id: string; camera_id: string | null; visto_em: string; confianca: number | null; snapshot_path: string | null }
 export type Avistamento = {

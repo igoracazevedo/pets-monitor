@@ -94,6 +94,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
                     </h2>
                   )}
                   <p className="truncate text-[12px] text-slate-500">
+                    {c.ip_atual ? `${c.ip_atual} · ` : ''}
                     {c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : 'Sem foto ainda'}
                   </p>
                   {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}

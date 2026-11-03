@@ -44,7 +44,8 @@ class Varredura:
         self.ident = Identificador(self.pets, cfg["identificacao"]["pontuacao_minima"], cfg["identificacao"]["margem_minima"])
         self.fixas = []
         for i, c in enumerate(cfg["cameras"]):
-            self.fixas.append((c, db.garantir_camera(c["nome"], c.get("ambiente"), i)))
+            ip = c.get("host") or c.get("url", "").split("@")[-1].split("/")[0].split(":")[0] or None
+            self.fixas.append((c, db.garantir_camera(c["nome"], c.get("ambiente"), i, None, ip)))
         self.cameras = list(self.fixas)
         # câmeras Intelbras achadas na rede (pelo número de série); o apelido vem do app
         self.cred = cfg.get("credencial_intelbras")

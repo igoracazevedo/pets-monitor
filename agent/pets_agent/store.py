@@ -74,8 +74,11 @@ class Supabase:
             return self._rest("POST", "pm_cameras", json={"nome": novo, "ambiente": ambiente, "ordem": ordem, "identificador": identificador, "ip_atual": ip}, extra={"Prefer": "return=representation"})[0]
         achadas = self._rest("GET", "pm_cameras", {"select": "*", "nome": f"eq.{nome}"})
         if achadas:
+            if ip and achadas[0].get("ip_atual") != ip:
+                self._rest("PATCH", "pm_cameras", {"id": f"eq.{achadas[0]['id']}"}, json={"ip_atual": ip})
+                achadas[0]["ip_atual"] = ip
             return achadas[0]
-        novas = self._rest("POST", "pm_cameras", json={"nome": nome, "ambiente": ambiente, "ordem": ordem}, extra={"Prefer": "return=representation"})
+        novas = self._rest("POST", "pm_cameras", json={"nome": nome, "ambiente": ambiente, "ordem": ordem, "ip_atual": ip}, extra={"Prefer": "return=representation"})
         return novas[0]
 
     def status_camera(self, camera_id: str, ok: bool, erro: str | None = None, quadro_path: str | None = None):
