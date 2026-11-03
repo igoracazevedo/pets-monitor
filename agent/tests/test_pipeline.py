@@ -119,7 +119,7 @@ from pets_agent import descoberta
 
 achadas_falsas = [{"ip": "10.0.0.21", "identificador": "sn:AAA", "modelo": "IPC"}]
 descoberta.ip_local = lambda: "10.0.0.5"
-descoberta.descobrir = lambda base, u, s, excluir=None, ignorados=None: achadas_falsas
+descoberta.descobrir = lambda base, u, s, excluir=None, ignorados=None, relatorio=None: achadas_falsas
 cfg2 = {**cfg, "cameras": [], "credencial_intelbras": {"usuario": "admin", "senha": "x"}}
 db2 = BancoFalso()
 v2 = Varredura(cfg2, db2, DetectorFalso())
@@ -135,3 +135,15 @@ v2.redescobrir()
 assert v2.cameras[0][0]["host"] == "10.0.0.99" and len(v2.cameras) == 1  # mesma câmera, IP novo
 assert not v2.precisa_redescobrir()
 print("descoberta pela rede: ok")
+
+
+# ---- perfil com amostras da câmera: com 2+ delas, só elas valem ----
+fotos_cel = [caracteristica(cena(CLARO, CAIXA), CAIXA)]
+cam_amostras = [caracteristica(cena(MARROM, CAIXA), CAIXA), caracteristica(cena(MARROM, CAIXA), CAIXA)]
+pets_v2 = [
+    {"id": "m", "nome": "Mavi", "perfil": criar_perfil(fotos_cel, cam_amostras)},   # foto do celular clara, mas na câmera ela é "marrom"
+    {"id": "b", "nome": "Bebela", "perfil": criar_perfil([caracteristica(cena((20, 30, 40), CAIXA), CAIXA)])},
+]
+ident2 = Identificador(pets_v2, 0.55, 0.05)
+assert ident2.palpite(caracteristica(cena(MARROM, CAIXA), CAIXA)).nome == "Mavi"
+print("perfil com amostras da câmera: ok")

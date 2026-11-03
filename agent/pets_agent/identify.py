@@ -27,9 +27,17 @@ def pontuacao(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sum(np.sqrt(a * b)))
 
 
-def criar_perfil(caracteristicas: list[np.ndarray]) -> dict:
-    media = np.mean(caracteristicas, axis=0)
-    return {"hist": [round(float(v), 6) for v in media], "amostras": len(caracteristicas), "bins": list(BINS), "versao": 1}
+def criar_perfil(caracteristicas: list[np.ndarray], de_camera: list[np.ndarray] | None = None) -> dict:
+    """`hist` é a média (compatível com versões antigas); `hists` guarda cada amostra, marcada com a origem (foto do celular ou quadro da câmera)."""
+    de_camera = (de_camera or [])[-80:]
+    todas = list(caracteristicas) + de_camera
+    media = np.mean(todas, axis=0)
+    amostras = [{"o": "foto", "h": [round(float(v), 5) for v in f]} for f in caracteristicas] + [{"o": "camera", "h": [round(float(v), 5) for v in f]} for f in de_camera]
+    return {"hist": [round(float(v), 6) for v in media], "hists": amostras, "amostras": len(todas), "bins": list(BINS), "versao": 2}
+
+
+def amostras_de_camera(perfil: dict | None) -> list[np.ndarray]:
+    return [np.array(a["h"], dtype=np.float32) for a in (perfil or {}).get("hists", []) if a.get("o") == "camera"]
 
 
 @dataclass
@@ -42,23 +50,28 @@ class Palpite:
 
 class Identificador:
     def __init__(self, pets: list[dict], pontuacao_minima: float, margem_minima: float):
-        self.pets = [
-            {"id": p["id"], "nome": p["nome"], "hist": np.array(p["perfil"]["hist"], dtype=np.float32)}
-            for p in pets
-            if p.get("perfil") and p["perfil"].get("hist")
-        ]
+        self.pets = []
+        for p in pets:
+            perfil = p.get("perfil")
+            if not (perfil and perfil.get("hist")):
+                continue
+            fotos = [np.array(a["h"], dtype=np.float32) for a in perfil.get("hists", []) if a.get("o") != "camera"]
+            cam = amostras_de_camera(perfil)
+            # com 2+ amostras tiradas pela própria câmera, só elas valem (a foto do celular tem outra luz e outra cor)
+            usar = cam if len(cam) >= 2 else (fotos or [np.array(perfil["hist"], dtype=np.float32)])
+            self.pets.append({"id": p["id"], "nome": p["nome"], "hist": np.array(perfil["hist"], dtype=np.float32), "amostras": usar})
         self.total_pets = len(pets)
         self.minimo = pontuacao_minima
         self.margem = margem_minima
 
     def pontuacoes(self, feat: np.ndarray) -> list[tuple[float, dict]]:
-        return sorted(((pontuacao(feat, p["hist"]), p) for p in self.pets), key=lambda t: -t[0])
+        return sorted(((max(pontuacao(feat, h) for h in p["amostras"]), p) for p in self.pets), key=lambda t: -t[0])
 
     def palpite(self, feat: np.ndarray, excluir: set[str] | None = None) -> Palpite:
         excluir = excluir or set()
         if self.total_pets == 1 and len(self.pets) == 1:
             p = self.pets[0]
-            return Palpite(p["id"], p["nome"], pontuacao(feat, p["hist"]), "unico")
+            return Palpite(p["id"], p["nome"], max(pontuacao(feat, h) for h in p["amostras"]), "unico")
         cand = [(s, p) for s, p in self.pontuacoes(feat) if p["id"] not in excluir]
         if not cand:
             return Palpite(None, None, 0.0, "incerto")

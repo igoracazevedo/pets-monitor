@@ -5,9 +5,9 @@ quadro_da_camera_a_cada_s: 60  # foto da câmera para a aba "Câmeras"
 largura_foto: 960            # redimensiona as fotos guardadas
 
 deteccao:
-  modelo: yolov8n.pt         # baixa sozinho na primeira vez (yolov8s.pt é mais preciso e mais pesado)
-  confianca_minima: 0.35
-  tamanho: 640
+  modelo: yolov8s.pt         # baixa sozinho na primeira vez (yolov8s.pt é mais preciso e mais pesado)
+  confianca_minima: 0.25
+  tamanho: 960
 
 identificacao:
   # só vale com 2+ pets: precisa acertar a cor e ficar claramente à frente do outro

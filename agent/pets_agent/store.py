@@ -25,6 +25,10 @@ class Supabase:
     def pets(self) -> list[dict]:
         return self._rest("GET", "pm_pets", {"select": "*", "ativo": "eq.true", "order": "nome"})
 
+    def pet_por_nome(self, nome: str) -> dict | None:
+        r = self._rest("GET", "pm_pets", {"select": "*", "nome": f"ilike.{nome}"})
+        return r[0] if r else None
+
     def pets_para_reaprender(self) -> list[dict]:
         return self._rest("GET", "pm_pets", {"select": "*", "precisa_reaprender": "eq.true", "ativo": "eq.true"})
 

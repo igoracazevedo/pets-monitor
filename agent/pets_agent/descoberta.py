@@ -80,18 +80,22 @@ def identificar(ip: str, usuario: str, senha: str) -> dict | None:
     return {"ip": ip, "identificador": f"sn:{sn}", "modelo": tipo}
 
 
-def descobrir(base: str, usuario: str, senha: str, excluir: set[str] | None = None, ignorados: set[str] | None = None) -> list[dict]:
+def descobrir(base: str, usuario: str, senha: str, excluir: set[str] | None = None, ignorados: set[str] | None = None, relatorio: list[str] | None = None) -> list[dict]:
     """Câmeras Intelbras achadas agora. `ignorados` (preenchido aqui) guarda IPs que recusaram o login: não insiste, para não bloquear."""
     ignorados = ignorados if ignorados is not None else set()
     alvo = [ip for ip in candidatos(base, (excluir or set()) | ignorados)]
     with ThreadPoolExecutor(12) as ex:
         res = list(ex.map(lambda ip: identificar(ip, usuario, senha), alvo))
     achadas = []
-    for r in res:
+    for ip, r in zip(alvo, res):
         if not r:
+            if relatorio is not None:
+                relatorio.append(f"{ip}: porta de câmera aberta, mas não respondeu como câmera Intelbras (outro aparelho, ou firmware diferente)")
             continue
         if r.get("erro_login"):
             ignorados.add(r["ip"])
+            if relatorio is not None:
+                relatorio.append(f"{ip}: RECUSOU o login (senha diferente das outras?). Não insisto, para não bloquear a câmera")
             continue
         achadas.append(r)
     return achadas

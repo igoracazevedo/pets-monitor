@@ -50,6 +50,7 @@ class Varredura:
         self.cred = cfg.get("credencial_intelbras")
         self.achadas: dict[str, tuple[dict, dict]] = {}
         self.ignorados: set[str] = set()
+        self.relatado: set[str] = set()
         self.ultima_descoberta = 0.0
         self.ultimo_nomes = 0.0
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
@@ -77,7 +78,13 @@ class Varredura:
         self.ultima_descoberta = time.time()
         base = ".".join(descoberta.ip_local().split(".")[:3])
         fixos = {c.get("host") or c.get("url", "").split("@")[-1].split("/")[0].split(":")[0] for c, _ in self.fixas}
-        for a in descoberta.descobrir(base, self.cred["usuario"], self.cred["senha"], fixos, self.ignorados):
+        relatorio: list[str] = []
+        achadas = descoberta.descobrir(base, self.cred["usuario"], self.cred["senha"], fixos, self.ignorados, relatorio)
+        for linha in relatorio:
+            if linha not in self.relatado:
+                self.relatado.add(linha)
+                print("  [rede]", linha, flush=True)
+        for a in achadas:
             ident = a["identificador"]
             reg = self.db.garantir_camera(f"Câmera {ident[-4:]}", None, 100 + len(self.achadas), ident, a["ip"])
             if ident in self.achadas:
@@ -100,20 +107,25 @@ class Varredura:
         self.cameras = [(c, {**reg, **{k: atuais[reg["id"]].get(k, reg.get(k)) for k in ("nome", "ativo")}} if reg["id"] in atuais else reg) for c, reg in self.cameras]
 
     def analisar(self, frame, cid: str, aprender: bool = True):
-        """Acha cães/gatos no quadro e diz quem é cada um: pela cor de dia; pelo tamanho no infravermelho."""
-        dets = self.detector.detectar(frame)
-        if dets and eh_noturno(frame):  # infravermelho: sem cor, decide pelo tamanho
+        """Acha cães/gatos no quadro e diz quem é cada um: pela cor de dia; pelo tamanho no infravermelho.
+        Detecção duvidosa (ex.: "urso de pelúcia" = spitz pequeno) só vale de dia e se a cor bater com um pet."""
+        noite = eh_noturno(frame)
+        dets = [d for d in self.detector.detectar(frame) if not (noite and d.fraca)]
+        if dets and noite:  # infravermelho: sem cor, decide pelo tamanho
             return dets, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
         usados: set[str] = set()
-        palpites = []
+        dets_ok, palpites = [], []
         for d in dets:
             p = self.ident.palpite(caracteristica(frame, d.caixa), usados)
+            if d.fraca and not (p.pet_id and p.pontuacao >= 0.6):
+                continue  # brinquedo ou coisa parecida
             if p.pet_id:
                 usados.add(p.pet_id)  # um pet aparece uma vez por quadro
                 if aprender and p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite
                     self.tamanhos.atualizar(cid, p.pet_id, area_relativa(d.caixa, frame.shape))
+            dets_ok.append(d)
             palpites.append(p)
-        return dets, palpites
+        return dets_ok, palpites
 
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
         nome, cid = reg["nome"], reg["id"]  # nome = apelido dado no app; cid = identidade estável da câmera

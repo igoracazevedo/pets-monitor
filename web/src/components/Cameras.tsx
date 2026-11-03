@@ -55,6 +55,8 @@ export default function Cameras({ admin }: { admin: boolean }) {
 
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
+  const visiveis = dados.cams.filter((c) => c.ativo)
+  const ocultas = dados.cams.length - visiveis.length
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
     <div className="space-y-3">
@@ -62,11 +64,12 @@ export default function Cameras({ admin }: { admin: boolean }) {
         <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
       </button>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
-      {admin && dados.cams.some((c) => c.nome.startsWith('Câmera ')) && (
+      {admin && visiveis.some((c) => c.nome.startsWith('Câmera ')) && (
         <p className="vidro px-3 py-2 text-[12px] text-slate-600">Câmeras novas foram achadas na rede. Olhe a imagem e toque no lápis para dar o nome do local (Cozinha, Quarto…).</p>
       )}
+      {ocultas > 0 && <p className="text-[12px] text-slate-500">{ocultas} câmera(s) desativada(s) — reative em Ajustes.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
-        {dados.cams.map((c) => {
+        {visiveis.map((c) => {
           const fora = c.ultimo_status === 'erro' || minutosDesde(c.ultima_leitura) > 5
           const base = c.ultimo_quadro_path ? dados.fotos[c.ultimo_quadro_path] : undefined
           const img = base ? `${base}${base.includes('?') ? '&' : '?'}t=${c.foto_em ? Date.parse(c.foto_em) : 0}` : undefined

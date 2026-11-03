@@ -3,9 +3,11 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from . import capture, config
-from .identify import caracteristica, criar_perfil
+from .identify import amostras_de_camera, caracteristica, criar_perfil
+from .noturno import eh_noturno
 from .store import Supabase
 
 
@@ -13,7 +15,7 @@ def _detector(cfg):
     from .detect import Detector
 
     d = cfg["deteccao"]
-    return Detector(d["modelo"], d["confianca_minima"], d["tamanho"])
+    return Detector(d["modelo"], d["confianca_minima"], d["tamanho"], d.get("confianca_fraca", 0.3))
 
 
 def cmd_testar(args):
@@ -161,6 +163,54 @@ def cmd_sondar(args):
         print("Nenhum caminho comum funcionou. Veja no manual/app da câmera o endereço RTSP e o usuário/senha da câmera (nem sempre é o mesmo do app).")
 
 
+def cmd_ensinar_camera(args):
+    """Ensina a aparência de um pet olhando pela câmera onde ele está agora (a cor na câmera difere da do celular)."""
+    from .varredura import Varredura, _anotar
+
+    cfg = config.carregar(args.config)
+    db = Supabase()
+    v = Varredura(cfg, db, _detector(cfg))
+    pet_nome = args.pet or input("Nome do pet (ex.: Mavi): ").strip()
+    cam_nome = args.camera or input("Nome da câmera onde ele está agora (como aparece na aba Câmeras): ").strip()
+    pet = db.pet_por_nome(pet_nome)
+    if not pet:
+        raise SystemExit(f"Não achei o pet '{pet_nome}'. Cadastre na aba Pets do site.")
+    if v.cred:
+        v.redescobrir()
+    v.atualizar_nomes()
+    alvo = next(((c, r) for c, r in v.cameras if r["nome"].lower() == cam_nome.lower()), None)
+    if not alvo:
+        raise SystemExit("Câmera não encontrada. Disponíveis: " + ", ".join(r["nome"] for _, r in v.cameras))
+    c, reg = alvo
+    novas = []
+    pasta = Path("ensinadas")
+    pasta.mkdir(exist_ok=True)
+    for i in range(args.quantas):
+        try:
+            frame = capture.capturar(c)
+        except Exception as e:
+            print(f"  quadro {i + 1}: sem imagem ({str(e)[:80]})")
+            continue
+        dets = v.detector.detectar(frame)
+        if not dets:
+            print(f"  quadro {i + 1}: nenhum cachorro achado")
+        else:
+            caixa = _caixa_do_pet(dets, pet.get("porte"))
+            if len(dets) > 1:
+                print(f"  quadro {i + 1}: {len(dets)} animais; usei o de porte '{pet.get('porte') or 'não informado'}'")
+            novas.append(caracteristica(frame, caixa))
+            cv2.imwrite(str(pasta / f"{pet_nome}-{reg['id'][:6]}-{i + 1}.jpg"), _anotar(frame, [(caixa, pet_nome)]))
+            print(f"  quadro {i + 1}: ok")
+        time.sleep(1.5)
+    if not novas:
+        raise SystemExit("Nenhuma amostra tirada. Confirme que o pet está visível nessa câmera e tente de novo.")
+    atual = db.pet_por_nome(pet_nome)
+    # sem cuidar do que já havia de foto: criar_perfil junta as fotos antigas (hists com origem foto) com as amostras novas
+    antigas_foto = [np.array(a["h"], dtype=np.float32) for a in (atual.get("perfil") or {}).get("hists", []) if a.get("o") != "camera"]
+    db.salvar_perfil(pet["id"], criar_perfil(antigas_foto, amostras_de_camera(atual.get("perfil")) + novas))
+    print(f"{pet_nome}: {len(novas)} amostra(s) nova(s) da câmera '{reg['nome']}'. As imagens usadas estão em {pasta}\\ — confira se a caixa está no pet certo.")
+
+
 def cmd_verificar(args):
     """Tira uma foto de cada câmera agora, acha os cães e diz quem é quem. Salva as imagens marcadas em verificacao/ (não mexe no histórico do site)."""
     from .varredura import Varredura, _anotar
@@ -238,18 +288,22 @@ def aprender_do_site(db, detector, pasta_local: str = "fotos", todos: bool = Fal
         if pasta:
             for foto in sorted([*pasta.glob("*.jpg"), *pasta.glob("*.jpeg"), *pasta.glob("*.png")]):
                 imagens.append(cv2.imread(str(foto)))
-        feats = []
+        feats, sem_cao, infra = [], 0, 0
         for img in imagens:
             if img is None:
                 continue
+            if eh_noturno(img):  # infravermelho não tem cor: não serve para o perfil de cor
+                infra += 1
+                continue
             dets = detector.detectar(img)
-            if dets:
-                feats.append(caracteristica(img, _caixa_do_pet(dets, pet.get("porte"))))
-            else:
-                h, w = img.shape[:2]
-                feats.append(caracteristica(img, (0, 0, w, h)))
-        db.salvar_perfil(pet["id"], criar_perfil(feats) if feats else None)
-        print(f"{pet['nome']}: perfil atualizado com {len(feats)} foto(s) (site + pasta fotos)")
+            if not dets:  # sem cachorro achado: usar a foto toda sujaria o perfil com o fundo
+                sem_cao += 1
+                continue
+            feats.append(caracteristica(img, _caixa_do_pet(dets, pet.get("porte"))))
+        db.salvar_perfil(pet["id"], criar_perfil(feats, amostras_de_camera(pet.get("perfil"))) if (feats or amostras_de_camera(pet.get("perfil"))) else None)
+        if sem_cao or infra:
+            print(f"  {pet['nome']}: {sem_cao} foto(s) sem cachorro detectado e {infra} de infravermelho foram ignoradas")
+        print(f"{pet['nome']}: perfil atualizado: {len(feats)} foto(s) + {len(amostras_de_camera(pet.get('perfil')))} amostra(s) de câmera")
         feitos += 1
     return feitos
 
@@ -319,6 +373,11 @@ def main():
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
     so.set_defaults(fn=cmd_sondar)
+    ec = sub.add_parser("ensinar-camera", help="ensina um pet pela câmera onde ele está agora")
+    ec.add_argument("pet", nargs="?", default="")
+    ec.add_argument("camera", nargs="?", default="")
+    ec.add_argument("--quantas", type=int, default=6)
+    ec.set_defaults(fn=cmd_ensinar_camera)
     vf = sub.add_parser("verificar", help="uma foto de cada câmera: quem está onde (salva imagens marcadas)")
     vf.set_defaults(fn=cmd_verificar)
     ds = sub.add_parser("descobrir", help="procura as câmeras na rede (quando o IP mudou)")
