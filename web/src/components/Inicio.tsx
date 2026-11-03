@@ -52,7 +52,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
             <li key={g.camera_id} className="flex items-center gap-3">
               {g.snapshot_path && dados.fotos[g.snapshot_path] && <img src={dados.fotos[g.snapshot_path]} alt="" className="h-12 w-20 shrink-0 rounded-xl object-cover" />}
               <p className="min-w-0 text-sm text-slate-700">
-                <strong className="text-slate-900">{nomeCam(g.camera_id)}</strong> · {g.pessoas} {g.pessoas === 1 ? 'pessoa' : 'pessoas'} agora
+                <strong className="text-slate-900">{nomeCam(g.camera_id)}</strong> · {g.quem ? g.quem : `${g.pessoas} ${g.pessoas === 1 ? 'pessoa' : 'pessoas'}`} agora
               </p>
             </li>
           ))}

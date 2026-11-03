@@ -3,7 +3,7 @@ import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto } from '../lib/util'
 
-type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string> }
+type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string> }
 
 export default function Historico({ admin }: { admin: boolean }) {
   const [pet, setPet] = useState('todos')
@@ -13,12 +13,12 @@ export default function Historico({ admin }: { admin: boolean }) {
       if (pet === 'pessoas') q = q.eq('especie', 'pessoa')
       else if (pet === 'desconhecido') q = q.is('pet_id', null).neq('especie', 'pessoa')
       else if (pet !== 'todos') q = q.eq('pet_id', pet)
-      const [pets, cams, lista] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q])
+      const [pets, cams, lista, gente] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome')])
       if (lista.error) throw new Error(lista.error.message)
       const l = (lista.data ?? []) as Avistamento[]
-      return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)) }
+      return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)), gente: Object.fromEntries(((gente.data ?? []) as { id: string; nome: string }[]).map((g) => [g.id, g.nome])) }
     },
-    { pets: [], cams: [], lista: [], fotos: {} },
+    { pets: [], cams: [], lista: [], fotos: {}, gente: {} },
     20000,
   )
   async function naoEPet(a: Avistamento) {
@@ -34,7 +34,7 @@ export default function Historico({ admin }: { admin: boolean }) {
   }
 
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
-  const nomePet = (id: string | null, esp?: string | null) => (esp === 'pessoa' ? 'Pessoa' : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
+  const nomePet = (id: string | null, esp?: string | null, pessoa?: string | null) => (esp === 'pessoa' ? (pessoa ? (dados.gente[pessoa] ?? 'Pessoa') : 'Pessoa') : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
 
   return (
     <div className="space-y-3">
@@ -64,7 +64,7 @@ export default function Historico({ admin }: { admin: boolean }) {
                 <span className="h-14 w-24 shrink-0 rounded-xl bg-slate-100" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id, a.especie)}</p>
+                <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id, a.especie, a.pessoa_id)}</p>
                 <p className="truncate text-[12px] text-slate-500">
                   {nomeCam(a.camera_id)} · {dataHora(a.visto_em)} · {haQuanto(a.visto_em)}
                 </p>

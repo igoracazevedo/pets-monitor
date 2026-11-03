@@ -45,7 +45,8 @@ class Palpite:
     pet_id: str | None
     nome: str | None
     pontuacao: float
-    como: str  # cor | unico | incerto
+    como: str  # cor | unico | incerto | tamanho | pessoa | rosto
+    pessoa_id: str | None = None
 
 
 class Identificador:

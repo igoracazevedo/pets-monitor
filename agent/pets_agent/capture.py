@@ -122,6 +122,14 @@ def _continuo(url: str) -> np.ndarray:
     return f.quadro.copy()
 
 
+def capturar_alta(cam: dict) -> np.ndarray:
+    """Quadro em resolução cheia (stream principal), para reconhecer rosto. A foto HTTP das Intelbras vem pequena (640x480)."""
+    if cam.get("fonte") == "intelbras":
+        url = f"rtsp://{quote(cam['usuario'], safe='')}:{quote(cam['senha'], safe='')}@{cam['host']}:554/cam/realmonitor?channel=1&subtype=0"
+        return _rtsp(url)
+    return capturar(cam)
+
+
 def capturar(cam: dict) -> np.ndarray:
     """Um quadro da câmera (BGR). `fonte`: rtsp | http | arquivo."""
     fonte = cam.get("fonte", "rtsp")

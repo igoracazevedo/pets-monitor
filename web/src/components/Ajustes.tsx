@@ -1,11 +1,32 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase, type Camera, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
+import { ativarAvisos, avisosAtivos, desativarAvisos, suportaAvisos } from '../lib/push'
 
 type Membro = { email: string; admin: boolean }
 
-export default function Ajustes({ admin }: { admin: boolean }) {
+export default function Ajustes({ admin, email: meuEmail }: { admin: boolean; email: string }) {
+  const [aviso, setAviso] = useState<boolean | null>(null)
+  const [avisoMsg, setAvisoMsg] = useState('')
+  useEffect(() => {
+    void avisosAtivos().then(setAviso)
+  }, [])
+  async function alternarAvisos() {
+    setAvisoMsg('')
+    try {
+      if (aviso) await desativarAvisos()
+      else await ativarAvisos(meuEmail)
+      setAviso(await avisosAtivos())
+    } catch (e) {
+      setAvisoMsg(e instanceof Error ? e.message : String(e))
+    }
+  }
+  async function testarAviso() {
+    const { error } = await supabase.from('pm_pedidos').insert({ tipo: 'teste' })
+    setAvisoMsg(error ? error.message : 'Pedido enviado: o aviso de teste chega em alguns segundos (o programa de casa precisa estar aberto).')
+  }
+
   const { dados, recarregar } = useDados<{ pets: Pet[]; cams: Camera[]; membros: Membro[] }>(
     async () => {
       const [p, c, m] = await Promise.all([
@@ -27,10 +48,27 @@ export default function Ajustes({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
-  if (!admin) return <p className="vidro p-6 text-center text-slate-600">Só administradores alteram ajustes.</p>
+  const cartaoAvisos = (
+    <section className="vidro space-y-2 p-4">
+      <h2 className="font-bold text-slate-900">Avisos neste aparelho</h2>
+      <p className="text-[12px] text-slate-500">Receba no celular quando um pet ou pessoa marcado com "Avisar" for encontrado. Marque quem avisar nas abas Pets e Pessoas.</p>
+      {suportaAvisos() ? (
+        <div className="flex flex-wrap gap-2">
+          <button className="pilula" onClick={() => void alternarAvisos()}>{aviso ? 'Desligar avisos' : 'Ativar avisos'}</button>
+          {aviso && <button className="pilula" onClick={() => void testarAviso()}>Enviar teste</button>}
+        </div>
+      ) : (
+        <p className="text-[12px] text-amber-700">Este navegador não suporta avisos. No iPhone, abra o site no Safari, toque em Compartilhar → Adicionar à Tela de Início e abra por lá.</p>
+      )}
+      {avisoMsg && <p className="text-[12px] text-slate-600">{avisoMsg}</p>}
+    </section>
+  )
+
+  if (!admin) return <div className="space-y-4">{cartaoAvisos}<p className="vidro p-6 text-center text-slate-600">Só administradores alteram ajustes.</p></div>
 
   return (
     <div className="space-y-5">
+      {cartaoAvisos}
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
 
       <section className="vidro space-y-2 p-4">

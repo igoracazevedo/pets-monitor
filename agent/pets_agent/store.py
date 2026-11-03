@@ -54,6 +54,35 @@ class Supabase:
             return False
         return datetime.fromisoformat(linhas[0]["ate"].replace("Z", "+00:00")) > datetime.now(timezone.utc)
 
+    # --- pessoas cadastradas (rosto) ---
+    def pessoas(self) -> list[dict]:
+        return self._rest("GET", "pm_pessoas", {"select": "*", "ativo": "eq.true", "order": "nome"})
+
+    def pessoas_para_reaprender(self) -> list[dict]:
+        return self._rest("GET", "pm_pessoas", {"select": "*", "precisa_reaprender": "eq.true", "ativo": "eq.true"})
+
+    def fotos_da_pessoa(self, pessoa_id: str) -> list[dict]:
+        return self._rest("GET", "pm_pessoa_fotos", {"select": "*", "pessoa_id": f"eq.{pessoa_id}", "order": "created_at"})
+
+    def rostos_das_pessoas(self) -> dict[str, list]:
+        linhas = self._rest("GET", "pm_pessoa_rostos", {"select": "*"})
+        return {l["pessoa_id"]: (l.get("perfil") or {}).get("embs", []) for l in linhas}
+
+    def salvar_rostos(self, pessoa_id: str, embs: list):
+        self._rest("POST", "pm_pessoa_rostos", {"on_conflict": "pessoa_id"}, json={"pessoa_id": pessoa_id, "perfil": {"embs": embs}}, extra={"Prefer": "resolution=merge-duplicates"})
+        self._rest("PATCH", "pm_pessoas", {"id": f"eq.{pessoa_id}"}, json={"precisa_reaprender": False})
+
+    # --- avisos no celular ---
+    def assinaturas_push(self) -> list[dict]:
+        return self._rest("GET", "pm_push", {"select": "endpoint,assinatura"})
+
+    def remover_assinatura(self, endpoint: str):
+        self._rest("DELETE", "pm_push", {"endpoint": f"eq.{endpoint}"})
+
+    def url_assinada(self, caminho: str, bucket: str = "pm-snapshots", segundos: int = 86400) -> str | None:
+        r = requests.post(f"{self.url}/storage/v1/object/sign/{bucket}/{caminho}", json={"expiresIn": segundos}, headers=self.h, timeout=15)
+        return f"{self.url}/storage/v1{r.json()['signedURL']}" if r.ok else None
+
     def presenca(self, linha: dict):
         self._rest("POST", "pm_presenca", {"on_conflict": "camera_id"}, json=linha, extra={"Prefer": "resolution=merge-duplicates"})
 

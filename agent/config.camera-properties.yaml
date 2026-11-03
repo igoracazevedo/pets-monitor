@@ -5,7 +5,7 @@ cameras_arquivo: camera.properties
 # Do camera.properties só são usados o login das Intelbras e as câmeras 'rtsp' (Mercusys etc.).
 descobrir_rede: true
 
-intervalo_s: 15
+intervalo_s: 300             # varredura a cada 5 minutos (ou na hora, em "Onde estão agora?")
 historico_a_cada_s: 0  # 0 = sem registro por tempo: só entra no histórico quando a posição muda
 quadro_da_camera_a_cada_s: 60
 largura_foto: 960

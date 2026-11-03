@@ -189,3 +189,62 @@ assert db5.pres[-1]["pessoas"] == 2
 v5.todas()
 assert len(db5.avist) == 1  # parada/ainda lá: não enche o histórico
 print("pessoas: ok")
+
+
+# ---- reconhecimento de rosto (com vetores de mentira: o modelo real só roda no PC) ----
+from pets_agent.rostos import Rostos, cosseno
+
+class RostosFalso(Rostos):
+    def __init__(self, vetor):
+        super().__init__()
+        self.vetor = vetor
+    def rostos(self, img):
+        return [((0, 0, 50, 50), self.vetor)] if self.vetor is not None else []
+
+rng = np.random.default_rng(7)
+igor, rafa = rng.normal(size=128).astype(np.float32), rng.normal(size=128).astype(np.float32)
+conhecidos = [{"id": "p1", "nome": "Igor", "embs": [igor]}, {"id": "p2", "nome": "Rafaelly", "embs": [rafa]}]
+perto = igor + rng.normal(scale=0.2, size=128).astype(np.float32)
+r = RostosFalso(perto).identificar(np.zeros((10, 10, 3), np.uint8), conhecidos)
+assert r and r[0]["nome"] == "Igor", r
+estranho = rng.normal(size=128).astype(np.float32)
+assert RostosFalso(estranho).identificar(np.zeros((10, 10, 3), np.uint8), conhecidos) is None  # desconhecido não vira ninguém
+assert RostosFalso(None).identificar(np.zeros((10, 10, 3), np.uint8), conhecidos) is None
+
+db6 = BancoFalso()
+v6 = Varredura(cfg3, db6, DetectorGente())
+v6.rostos = RostosFalso(perto)
+v6.conhecidos = conhecidos
+saida = v6.todas()
+assert "Igor" in saida[0], saida
+assert any(a.get("pessoa_id") == "p1" for a in db6.avist), db6.avist
+assert "Igor" in (db6.pres[-1].get("quem") or ""), db6.pres[-1]
+print("reconhecimento de pessoas: ok")
+
+
+# ---- avisos no celular: só pet marcado, e só em lugar novo ----
+class NotifFalso:
+    ativo = True
+    def __init__(self): self.msgs = []
+    def enviar(self, titulo, corpo, imagem=None, tag=None):
+        self.msgs.append((titulo, corpo)); return 1
+
+class BancoComAviso(BancoFalso):
+    def pets(self):
+        return [{**p, "notificar": p["nome"] == "Marrom"} for p in pets]
+    def url_assinada(self, caminho, *a, **k):
+        return "https://exemplo/foto.jpg"
+
+dbn = BancoComAviso()
+vn = Varredura(cfg3, dbn, DetectorFalso())
+vn.notificador = NotifFalso()
+vn.todas(); vn.todas()
+assert len(vn.notificador.msgs) == 1 and "Marrom" in vn.notificador.msgs[0][0], vn.notificador.msgs  # parado: avisa uma vez
+vn.todas(forcar=True)
+assert len(vn.notificador.msgs) == 2  # "Onde estão agora?" avisa de novo
+vn2 = Varredura(cfg3, BancoComAviso(), DetectorFalso())
+vn2.notificador = NotifFalso()
+vn2.pets = [{**p, "notificar": False} for p in pets]
+vn2.todas()
+assert vn2.notificador.msgs == []  # pet sem "Avisar" não notifica
+print("avisos no celular: ok")

@@ -220,6 +220,11 @@ def cmd_verificar(args):
     v = Varredura(cfg, db, _detector(cfg))
     if aprender_do_site(db, v.detector):  # fotos enviadas pelo site desde a última vez
         v.recarregar_pets()
+    try:
+        if aprender_pessoas(db):
+            v.carregar_pessoas()
+    except Exception as e:
+        print("Pessoas (rosto):", e)
     if v.cred:
         print(f"{v.redescobrir()} câmera(s) Intelbras achada(s) na rede.")
     if not v.pets or not any(p.get("perfil") for p in v.pets):
@@ -308,9 +313,42 @@ def aprender_do_site(db, detector, pasta_local: str = "fotos", todos: bool = Fal
     return feitos
 
 
+def aprender_pessoas(db) -> int:
+    """Refaz o 'rosto' das pessoas cadastradas no site cujas fotos mudaram. Usa o maior rosto de cada foto; foto sem rosto é ignorada."""
+    import numpy as np
+
+    pendentes = db.pessoas_para_reaprender()
+    if not pendentes:
+        return 0
+    from .rostos import Rostos
+
+    rostos = Rostos()
+    for pessoa in pendentes:
+        embs, sem_rosto = [], 0
+        for f in db.fotos_da_pessoa(pessoa["id"]):
+            try:
+                img = cv2.imdecode(np.frombuffer(db.baixar_foto_pet(f["path"]), np.uint8), cv2.IMREAD_COLOR)
+                e = rostos.maior(img) if img is not None else None
+            except Exception as ex:
+                print(f"  {pessoa['nome']}: foto ignorada ({ex})")
+                e = None
+            if e is None:
+                sem_rosto += 1
+            else:
+                embs.append([round(float(v), 5) for v in e])
+        db.salvar_rostos(pessoa["id"], embs)
+        print(f"{pessoa['nome']}: {len(embs)} rosto(s) aprendido(s)" + (f"; {sem_rosto} foto(s) sem rosto visível foram ignoradas" if sem_rosto else ""))
+    return len(pendentes)
+
+
 def cmd_sincronizar(args):
     cfg = config.carregar(args.config)
-    n = aprender_do_site(Supabase(), _detector(cfg), todos=getattr(args, "todos", False))
+    db = Supabase()
+    n = aprender_do_site(db, _detector(cfg), todos=getattr(args, "todos", False))
+    try:
+        n += aprender_pessoas(db)
+    except Exception as e:
+        print("Pessoas (rosto):", e)
     print("Nada novo no site." if n == 0 else f"{n} pet(s) atualizado(s).")
 
 
@@ -340,15 +378,24 @@ def cmd_varrer(args):
                 ultimo_sync = ini
                 if aprender_do_site(db, v.detector):
                     v.recarregar_pets()
+                try:
+                    if aprender_pessoas(db):
+                        v.carregar_pessoas()
+                except Exception as e:
+                    print("Pessoas (rosto):", e, flush=True)
             if v.precisa_redescobrir():
                 print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
             pedidos = db.pedidos_pendentes()
-            if pedidos:  # "Onde estão agora?" (varredura completa) ou "Ver ao vivo" (só uma foto de cada câmera)
-                if any(p.get("tipo", "localizar") == "localizar" for p in pedidos):
+            if pedidos:  # "Onde estão agora?" (varredura completa), "Ver ao vivo" (só uma foto de cada câmera) ou teste de aviso
+                tipos = {p.get("tipo", "localizar") for p in pedidos}
+                if "teste" in tipos and v.notificador:
+                    n = v.notificador.enviar("Pets Monitor", "Teste de aviso: está funcionando!", None, "teste")
+                    print(time.strftime("%H:%M:%S"), f"[teste] aviso enviado para {n} aparelho(s)", flush=True)
+                if "localizar" in tipos:
                     for linha in v.todas(forcar=True):
                         print(time.strftime("%H:%M:%S"), "[pedido]", linha, flush=True)
                     ultima_varredura = time.time()
-                else:
+                elif "fotos" in tipos:
                     print(time.strftime("%H:%M:%S"), f"[fotos] {v.fotos_agora()} câmera(s)", flush=True)
                 db.atender_pedidos([p["id"] for p in pedidos])
             elif ini - ultima_varredura >= cfg["intervalo_s"]:

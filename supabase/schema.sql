@@ -184,4 +184,54 @@ create policy pm_presenca_ler on public.pm_presenca for select to authenticated 
 drop policy if exists pm_presenca_admin on public.pm_presenca;
 create policy pm_presenca_admin on public.pm_presenca for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- Pessoas cadastradas (rosto reconhecido no PC de casa). Só quem concordou deve ser cadastrado.
+create table if not exists public.pm_pessoas (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null unique,
+  ativo boolean not null default true,
+  precisa_reaprender boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.pm_pessoa_fotos (
+  id uuid primary key default gen_random_uuid(),
+  pessoa_id uuid not null references public.pm_pessoas(id) on delete cascade,
+  path text not null,
+  created_at timestamptz not null default now()
+);
+-- Os vetores do rosto ficam numa tabela SEM nenhuma regra de leitura: só o programa de casa (chave de serviço) enxerga.
+create table if not exists public.pm_pessoa_rostos (
+  pessoa_id uuid primary key references public.pm_pessoas(id) on delete cascade,
+  perfil jsonb not null
+);
+alter table public.pm_pessoas enable row level security;
+alter table public.pm_pessoa_fotos enable row level security;
+alter table public.pm_pessoa_rostos enable row level security;
+drop policy if exists pm_pessoas_ler on public.pm_pessoas;
+create policy pm_pessoas_ler on public.pm_pessoas for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_pessoas_admin on public.pm_pessoas;
+create policy pm_pessoas_admin on public.pm_pessoas for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+drop policy if exists pm_pessoa_fotos_ler on public.pm_pessoa_fotos;
+create policy pm_pessoa_fotos_ler on public.pm_pessoa_fotos for select to authenticated using (public.pm_is_admin());
+drop policy if exists pm_pessoa_fotos_admin on public.pm_pessoa_fotos;
+create policy pm_pessoa_fotos_admin on public.pm_pessoa_fotos for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+alter table public.pm_avistamentos add column if not exists pessoa_id uuid references public.pm_pessoas(id) on delete set null;
+alter table public.pm_presenca add column if not exists quem text;
+
+-- Avisos no celular (Web Push): quem quer ser avisado e sobre quem
+alter table public.pm_pets add column if not exists notificar boolean not null default false;
+alter table public.pm_pessoas add column if not exists notificar boolean not null default false;
+create table if not exists public.pm_push (
+  endpoint text primary key,
+  email text not null,
+  assinatura jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_push enable row level security;
+drop policy if exists pm_push_proprio on public.pm_push;
+create policy pm_push_proprio on public.pm_push for all to authenticated
+  using (public.pm_is_membro() and email = lower(coalesce(auth.jwt() ->> 'email', '')))
+  with check (public.pm_is_membro() and email = lower(coalesce(auth.jwt() ->> 'email', '')));
+alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
+alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste'));
+
 notify pgrst, 'reload schema';

@@ -5,7 +5,7 @@ const chave = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WjgE2b2i
 
 export const supabase = createClient(url, chave)
 
-export type Pet = { id: string; nome: string; especie: string; porte: string | null; descricao: string | null; perfil: unknown; ativo: boolean; precisa_reaprender: boolean; foto_perfil_path: string | null }
+export type Pet = { id: string; nome: string; especie: string; porte: string | null; descricao: string | null; perfil: unknown; ativo: boolean; precisa_reaprender: boolean; foto_perfil_path: string | null; notificar: boolean }
 export type PetFoto = { id: string; pet_id: string; path: string }
 export type Camera = {
   id: string
@@ -21,9 +21,11 @@ export type Camera = {
   ip_atual: string | null
 }
 export type Posicao = { pet_id: string; camera_id: string | null; visto_em: string; confianca: number | null; snapshot_path: string | null; foto_em: string | null; x: number | null; y: number | null; w: number | null; h: number | null }
-export type Presenca = { camera_id: string; pessoas: number; ultima_vez: string | null; snapshot_path: string | null; foto_em: string | null }
+export type Presenca = { camera_id: string; pessoas: number; ultima_vez: string | null; snapshot_path: string | null; foto_em: string | null; quem: string | null }
+export type Pessoa = { id: string; nome: string; ativo: boolean; precisa_reaprender: boolean; notificar: boolean }
 export type Avistamento = {
   especie?: string | null
+  pessoa_id?: string | null
   id: number
   pet_id: string | null
   camera_id: string

@@ -40,3 +40,8 @@ Em Linux/Raspberry: `pip install -r requirements.txt` e `python -m pets_agent va
 - **Pets** cadastra pets novos e envia fotos; o programa de casa aprende sozinho em até 2 min.
 
 > "Ao vivo" aqui são quadros atualizados a cada poucos segundos, sem expor as câmeras na internet. Vídeo contínuo exigiria um servidor de vídeo em casa (go2rtc) com túnel seguro; dá para adicionar depois.
+
+## Pessoas e avisos
+- **Pessoas:** o agente acha pessoas nas câmeras (`detectar_pessoas`) e, se você cadastrar alguém na aba **Pessoas** com fotos do rosto, reconhece quem é (`reconhecer_pessoas`). O reconhecimento roda só no PC de casa (modelos YuNet + SFace do OpenCV, baixados na primeira vez); os vetores do rosto ficam numa tabela sem acesso pelo site. Cadastre só quem concordou. Câmeras no teto nem sempre pegam o rosto: nesses casos aparece só "Pessoa".
+- **Avisos no celular:** em **Ajustes → Avisos neste aparelho**, ative e use **Enviar teste**. Marque **Avisar no celular quando encontrar** no pet ou na pessoa. O PC de casa envia o aviso (Web Push) quando o encontra num lugar novo, ou quando você toca em **Onde estão agora?**. A chave privada fica em `VAPID_PRIVATE_KEY` no `.env`; a pública já está no site.
+- **Frequência:** a varredura roda a cada 5 minutos (`intervalo_s: 300`) ou na hora, em **Onde estão agora?**.

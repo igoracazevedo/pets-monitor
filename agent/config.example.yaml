@@ -1,5 +1,5 @@
 # Copie para config.yaml e ajuste. Variáveis ${NOME} vêm do arquivo .env.
-intervalo_s: 15              # tempo entre varreduras completas (todas as câmeras)
+intervalo_s: 300             # varredura a cada 5 minutos (ou na hora, em "Onde estão agora?")
 historico_a_cada_s: 0  # 0 = sem registro por tempo: só entra no histórico quando a posição muda
 quadro_da_camera_a_cada_s: 60  # foto da câmera para a aba "Câmeras"
 largura_foto: 960            # redimensiona as fotos guardadas

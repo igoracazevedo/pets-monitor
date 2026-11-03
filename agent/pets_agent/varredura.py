@@ -63,7 +63,13 @@ class Varredura:
         self.relatado: set[str] = set()
         self.ultima_descoberta = 0.0
         self.ultimo_nomes = 0.0
-        self.estado_presenca: dict[str, tuple[int, float]] = {}
+        self.estado_presenca: dict[str, tuple[int, float, str]] = {}
+        from .notificar import Notificador
+
+        self.notificador = Notificador(db) if hasattr(db, "assinaturas_push") else None
+        self.nomes_notificar: dict[str, bool] = {}
+        self.rostos = None            # carregado só se houver pessoas cadastradas
+        self.conhecidos: list[dict] = []
         self.ignorar: dict[str, list[tuple[float, float, float, float]]] = {}
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
         self.ultimo: dict[str, dict] = {}
@@ -107,11 +113,54 @@ class Varredura:
         self.cameras = self.fixas + list(self.achadas.values())
         return len(self.achadas)
 
+    def carregar_pessoas(self):
+        """Pessoas cadastradas no site com rosto já aprendido (a conta de quem entra: só no PC, o site nunca vê os vetores)."""
+        if not self.cfg.get("reconhecer_pessoas", True) or not self.cfg.get("detectar_pessoas", True):
+            return
+        try:
+            embs = self.db.rostos_das_pessoas()
+            pessoas = self.db.pessoas()
+        except Exception:
+            return  # SQL ainda não rodado
+        self.nomes_notificar = {p["id"]: bool(p.get("notificar")) for p in pessoas}
+        self.conhecidos = [
+            {"id": p["id"], "nome": p["nome"], "embs": [np.array(e, dtype=np.float32) for e in embs.get(p["id"], [])]}
+            for p in pessoas
+            if embs.get(p["id"])
+        ]
+        if self.conhecidos and self.rostos is None:
+            from .rostos import Rostos
+
+            self.rostos = Rostos()
+
+    def quem_e(self, frame, caixa, alta):
+        """Tenta reconhecer o rosto de uma pessoa detectada. Primeiro no quadro atual; se não der, no quadro em resolução cheia."""
+        if not (self.rostos and self.conhecidos):
+            return None
+
+        def recorte(img, c, escala=1.0):
+            x1, y1, x2, y2 = (int(v * escala) for v in c)
+            mx, my = int((x2 - x1) * 0.15), int((y2 - y1) * 0.1)
+            return img[max(0, y1 - my) : y2 + my, max(0, x1 - mx) : x2 + mx]
+
+        try:
+            r = self.rostos.identificar(recorte(frame, caixa), self.conhecidos)
+            if r is None and alta is not None:
+                grande = alta()
+                esc = grande.shape[1] / frame.shape[1]
+                if esc > 1.2:
+                    r = self.rostos.identificar(recorte(grande, caixa, esc), self.conhecidos)
+            return r
+        except Exception as e:
+            print(f"  reconhecimento: {e}", flush=True)
+            return None
+
     def atualizar_nomes(self):
         """Pega do banco o apelido e o liga/desliga de cada câmera (você muda no app)."""
         if time.time() - self.ultimo_nomes < 60:
             return
         self.ultimo_nomes = time.time()
+        self.carregar_pessoas()
         try:
             self.ignorar = {}
             for r in self.db.ignorar():
@@ -124,7 +173,7 @@ class Varredura:
             return
         self.cameras = [(c, {**reg, **{k: atuais[reg["id"]].get(k, reg.get(k)) for k in ("nome", "ativo")}} if reg["id"] in atuais else reg) for c, reg in self.cameras]
 
-    def analisar(self, frame, cid: str, aprender: bool = True):
+    def analisar(self, frame, cid: str, aprender: bool = True, alta=None):
         """Acha cães/gatos no quadro e diz quem é cada um: pela cor de dia; pelo tamanho no infravermelho.
         Detecção duvidosa (ex.: "urso de pelúcia" = spitz pequeno) só vale de dia e se a cor bater com um pet."""
         noite = eh_noturno(frame)
@@ -139,7 +188,12 @@ class Varredura:
         gente = [d for d in todas if d.especie == "pessoa"]
         dets = [d for d in todas if d.especie != "pessoa"]
         extra_d = gente
-        extra_p = [Palpite(None, "Pessoa", 1.0, "pessoa") for _ in gente]
+        extra_p = []
+        tentou_alta = False
+        for d in gente:
+            r = self.quem_e(frame, d.caixa, None if tentou_alta else alta)
+            tentou_alta = tentou_alta or (alta is not None and self.rostos is not None)
+            extra_p.append(Palpite(None, r[0]["nome"], r[1], "rosto", r[0]["id"]) if r else Palpite(None, "Pessoa", 1.0, "pessoa"))
         if dets and noite:  # infravermelho: sem cor, decide pelo tamanho
             return dets + extra_d, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos) + extra_p
         usados: set[str] = set()
@@ -172,7 +226,7 @@ class Varredura:
             return f"{nome}: ERRO {e}"
 
         h, w = frame.shape[:2]
-        dets, palpites = self.analisar(frame, cid)
+        dets, palpites = self.analisar(frame, cid, alta=lambda: capture.capturar_alta(cfg_cam))
         marcas, achados = [], []
         for d, p in zip(dets, palpites):
             achados.append((d, p))
@@ -188,13 +242,15 @@ class Varredura:
 
         foto = None
         n_pessoas = sum(1 for d, _ in achados if d.especie == "pessoa")
-        pessoa_vista = False
+        quem = sorted({p.nome for d, p in achados if d.especie == "pessoa" and p.como == "rosto"})
+        desconhecidas = sum(1 for d, p in achados if d.especie == "pessoa" and p.como != "rosto")
+        chaves_vistas: set[str] = set()
         for d, p in achados:
             eh_pessoa = d.especie == "pessoa"
-            if eh_pessoa and pessoa_vista:
-                continue  # várias pessoas no quadro: um registro só (a contagem vai na presença)
-            pessoa_vista = pessoa_vista or eh_pessoa
-            chave = f"pessoa:{cid}" if eh_pessoa else (p.pet_id or f"?{cid}")
+            chave = f"pessoa:{p.pessoa_id or 'anon'}:{cid}" if eh_pessoa else (p.pet_id or f"?{cid}")
+            if eh_pessoa and chave in chaves_vistas:
+                continue  # várias pessoas sem nome no quadro: um registro só (a contagem vai na presença)
+            chaves_vistas.add(chave)
             x1, y1, x2, y2 = d.caixa
             pos = {
                 "camera_id": cid,
@@ -211,8 +267,9 @@ class Varredura:
                 if foto is None:
                     foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{cid[:8]}-{datetime.now():%H%M%S}.jpg"
                     self.db.enviar_foto(foto, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
-                self.db.avistamento({**pos, "identificacao": p.como, "pet_id": p.pet_id, "especie": d.especie, "snapshot_path": foto})
+                self.db.avistamento({**pos, "identificacao": p.como, "pet_id": p.pet_id, "pessoa_id": p.pessoa_id, "especie": d.especie, "snapshot_path": foto})
                 self.ultimo[chave] = {"camera": cid, "ts": agora_ts, "foto": foto, "foto_em": agora(), "caixa": d.caixa}
+                self.avisar(p, nome, foto)
             else:
                 # parado no mesmo lugar: não grava nada novo, só atualiza a caixa de referência aos poucos (evita "arrastar" lentamente)
                 ant["caixa"] = d.caixa if iou(d.caixa, ant["caixa"]) > 0.8 else ant["caixa"]
@@ -220,20 +277,38 @@ class Varredura:
                 ref = self.ultimo[chave]
                 # "visto_em" = última vez que o vi; "foto_em" = quando a foto foi tirada (a foto só muda quando a posição muda)
                 self.db.ultima_posicao({**pos, "pet_id": p.pet_id, "visto_em": agora(), "snapshot_path": ref["foto"], "foto_em": ref["foto_em"]})
-        self.presenca(cid, n_pessoas, self.ultimo.get(f"pessoa:{cid}"))
+        ref = next((self.ultimo[k] for k in sorted(self.ultimo) if k.startswith("pessoa:") and k.endswith(f":{cid}")), None)
+        self.presenca(cid, n_pessoas, ref, ", ".join(quem + ([f"{desconhecidas} sem nome"] if desconhecidas and quem else [])))
         nomes = ", ".join(p.nome or "animal não identificado" for _, p in achados if p.como != "pessoa")
         if n_pessoas:
-            nomes = (nomes + ", " if nomes else "") + f"{n_pessoas} pessoa(s)"
+            nomes = (nomes + ", " if nomes else "") + (", ".join(quem) + (" + " if quem and desconhecidas else "") if quem else "") + (f"{desconhecidas} pessoa(s)" if desconhecidas or not quem else "")
         return f"{nome}: {nomes or 'ninguém'}"
 
-    def presenca(self, cid: str, n: int, ref: dict | None):
-        """Quantas pessoas há agora em cada câmera (para a tela Início). Só grava quando muda ou a cada 60 s com gente presente."""
-        antes, ts = self.estado_presenca.get(cid, (0, 0.0))
-        agora_ts = time.time()
-        if n == antes and (n == 0 or agora_ts - ts < 60):
+    def avisar(self, p, camera: str, foto: str | None):
+        """Aviso no celular quando um pet/pessoa marcado com 'Avisar' é encontrado num lugar novo (ou quando você pede 'Onde estão agora?')."""
+        if not self.notificador or not self.notificador.ativo:
             return
-        self.estado_presenca[cid] = (n, agora_ts)
-        linha = {"camera_id": cid, "pessoas": n}
+        pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
+        if pet and pet.get("notificar"):
+            quem, id_ = pet["nome"], pet["id"]
+        elif p.pessoa_id and self.nomes_notificar.get(p.pessoa_id):
+            quem, id_ = p.nome, p.pessoa_id
+        else:
+            return
+        try:
+            imagem = self.db.url_assinada(foto) if foto else None
+            self.notificador.enviar(f"{quem} foi encontrado(a)", f"Visto(a) em {camera}", imagem, f"achado-{id_}")
+        except Exception as e:
+            print(f"  aviso: {e}", flush=True)
+
+    def presenca(self, cid: str, n: int, ref: dict | None, quem: str = ""):
+        """Quantas pessoas há agora em cada câmera (para a tela Início). Só grava quando muda ou a cada 60 s com gente presente."""
+        antes, ts, quem_antes = self.estado_presenca.get(cid, (0, 0.0, ""))
+        agora_ts = time.time()
+        if n == antes and quem == quem_antes and (n == 0 or agora_ts - ts < 60):
+            return
+        self.estado_presenca[cid] = (n, agora_ts, quem)
+        linha = {"camera_id": cid, "pessoas": n, "quem": quem or None}
         if n:
             linha["ultima_vez"] = agora()
             if ref:

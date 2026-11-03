@@ -1,22 +1,36 @@
 import { useRef, useState } from 'react'
-import { Camera, Dog, ImagePlus, Plus, Trash2, X } from 'lucide-react'
-import { recortarQuadrado, reduzirImagem, supabase, urlsDosPets, type Pet, type PetFoto } from '../lib/supabase'
+import { Dog, ImagePlus, Plus, Trash2 } from 'lucide-react'
+import { recortarQuadrado, reduzirImagem, supabase, urlsDasFotos, urlsDosPets, type Pet, type PetFoto } from '../lib/supabase'
+import { Galeria } from './Galeria'
 import { useDados } from '../lib/dados'
 
-type Dados = { pets: Pet[]; fotos: PetFoto[]; urls: Record<string, string> }
+type Achada = { id: number; pet_id: string; visto_em: string; snapshot_path: string | null; camera_id: string }
+type Dados = { pets: Pet[]; fotos: PetFoto[]; urls: Record<string, string>; achadas: Achada[]; achadasUrls: Record<string, string>; cams: Record<string, string> }
 
 async function carregar(): Promise<Dados> {
-  const [p, f] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_pet_fotos').select('*').order('created_at')])
+  const [p, f, a, c] = await Promise.all([
+    supabase.from('pm_pets').select('*').order('nome'),
+    supabase.from('pm_pet_fotos').select('*').order('created_at'),
+    supabase.from('pm_avistamentos').select('id,pet_id,visto_em,snapshot_path,camera_id').not('pet_id', 'is', null).not('snapshot_path', 'is', null).order('visto_em', { ascending: false }).limit(400),
+    supabase.from('pm_cameras').select('id,nome'),
+  ])
   if (p.error) throw new Error(p.error.message)
   const fotos = (f.data ?? []) as PetFoto[]
   const urls: Record<string, string> = {}
   const todos = [...fotos.map((x) => x.path), ...((p.data ?? []) as Pet[]).map((x) => x.foto_perfil_path ?? '')]
   Object.assign(urls, await urlsDosPets(todos))
-  return { pets: (p.data ?? []) as Pet[], fotos, urls }
+  const achadas = ((a.data ?? []) as Achada[]).filter((x, i, l) => l.findIndex((y) => y.pet_id === x.pet_id && y.snapshot_path === x.snapshot_path) === i)
+  const porPet = new Map<string, number>()
+  const poucas = achadas.filter((x) => {
+    const n = (porPet.get(x.pet_id) ?? 0) + 1
+    porPet.set(x.pet_id, n)
+    return n <= 24
+  })
+  return { pets: (p.data ?? []) as Pet[], fotos, urls, achadas: poucas, achadasUrls: await urlsDasFotos(poucas.map((x) => x.snapshot_path)), cams: Object.fromEntries(((c.data ?? []) as { id: string; nome: string }[]).map((x) => [x.id, x.nome])) }
 }
 
 export default function Pets({ admin }: { admin: boolean }) {
-  const { dados, erro, carregando, recarregar } = useDados<Dados>(carregar, { pets: [], fotos: [], urls: {} }, 60000)
+  const { dados, erro, carregando, recarregar } = useDados<Dados>(carregar, { pets: [], fotos: [], urls: {}, achadas: [], achadasUrls: {}, cams: {} }, 60000)
   const [nome, setNome] = useState('')
   const [especie, setEspecie] = useState('cachorro')
   const [porte, setPorte] = useState('')
@@ -77,6 +91,12 @@ export default function Pets({ admin }: { admin: boolean }) {
       setEnviando(null)
       await recarregar()
     }
+  }
+
+  async function alternarAviso(p: Pet, v: boolean) {
+    const { error } = await supabase.from('pm_pets').update({ notificar: v }).eq('id', p.id)
+    if (error) falha(error)
+    await recarregar()
   }
 
   async function apagarFoto(f: PetFoto) {
@@ -160,32 +180,21 @@ export default function Pets({ admin }: { admin: boolean }) {
               </label>
             )}
 
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {fotos.map((f) => (
-                <div key={f.id} className="relative aspect-square overflow-hidden rounded-xl bg-slate-100">
-                  {dados.urls[f.path] && <img src={dados.urls[f.path]} alt="" className="h-full w-full object-cover" loading="lazy" />}
-                  {admin && (
-                    <button aria-label="Apagar foto" className="absolute right-1 top-1 rounded-full bg-black/55 p-1 text-white" onClick={() => void apagarFoto(f)}>
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              {admin && (
-                <button
-                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-cyan-700/40 text-[11px] font-semibold text-cyan-800 disabled:opacity-50"
-                  disabled={enviando === p.id}
-                  onClick={() => {
-                    alvo.current = p.id
-                    input.current?.click()
-                  }}
-                >
-                  <Camera size={20} />
-                  {enviando === p.id ? 'Enviando…' : 'Adicionar fotos'}
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500">Melhor com o pet sozinho na foto, de dia e à noite. Prints das câmeras funcionam muito bem.</p>
+            {admin && (
+              <label className="flex items-center gap-2 text-[12px] text-slate-600">
+                <input type="checkbox" checked={p.notificar} onChange={(e) => void alternarAviso(p, e.target.checked)} />
+                Avisar no celular quando encontrar
+              </label>
+            )}
+            <Galeria
+              enviadas={fotos.map((f) => ({ id: f.id, url: dados.urls[f.path] }))}
+              encontradas={dados.achadas.filter((x) => x.pet_id === p.id).map((x) => ({ id: String(x.id), url: x.snapshot_path ? dados.achadasUrls[x.snapshot_path] : undefined, legenda: `${dados.cams[x.camera_id] ?? 'Câmera'} · ${new Date(x.visto_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` }))}
+              admin={admin}
+              enviando={enviando === p.id}
+              onApagar={(id) => { const f = fotos.find((x) => x.id === id); if (f) void apagarFoto(f) }}
+              onAdicionar={() => { alvo.current = p.id; input.current?.click() }}
+              dica="Melhor com o pet sozinho na foto, de dia e à noite. Prints das câmeras funcionam muito bem."
+            />
           </section>
         )
       })}
