@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Cat, Dog, RefreshCw } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera, type Pet, type Posicao } from '../lib/supabase'
+import { supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
-type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; desconhecidos: number }
+type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number }
 
 async function carregar(): Promise<Dados> {
   const [pets, pos, cams, desc] = await Promise.all([
@@ -24,13 +24,14 @@ async function carregar(): Promise<Dados> {
     pos: p,
     cams: (cams.data ?? []) as Camera[],
     fotos: await urlsDasFotos(p.map((x) => x.snapshot_path)),
+    perfis: await urlsDosPets(((pets.data ?? []) as Pet[]).map((x) => x.foto_perfil_path)),
     desconhecidos: desc.count ?? 0,
   }
 }
 
 export default function Inicio() {
   const [buscando, setBuscando] = useState(false)
-  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, desconhecidos: 0 })
+  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0 })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
   if (dados.pets.length === 0)
@@ -67,9 +68,13 @@ export default function Inicio() {
           return (
             <article key={pet.id} className="vidro overflow-hidden">
               <div className="flex items-center gap-3 p-4">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-700/10 text-cyan-800">
-                  <Icone size={22} strokeWidth={1.9} />
-                </span>
+                {pet.foto_perfil_path && dados.perfis[pet.foto_perfil_path] ? (
+                  <img src={dados.perfis[pet.foto_perfil_path]} alt={pet.nome} className="h-11 w-11 rounded-2xl object-cover" />
+                ) : (
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-700/10 text-cyan-800">
+                    <Icone size={22} strokeWidth={1.9} />
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate text-lg font-extrabold text-slate-900">{pet.nome}</h2>
                   {pos ? (

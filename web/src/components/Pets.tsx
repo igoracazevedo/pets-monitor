@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Camera, Plus, Trash2, X } from 'lucide-react'
-import { reduzirImagem, supabase, type Pet, type PetFoto } from '../lib/supabase'
+import { Camera, Dog, ImagePlus, Plus, Trash2, X } from 'lucide-react'
+import { recortarQuadrado, reduzirImagem, supabase, urlsDosPets, type Pet, type PetFoto } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 
 type Dados = { pets: Pet[]; fotos: PetFoto[]; urls: Record<string, string> }
@@ -10,10 +10,8 @@ async function carregar(): Promise<Dados> {
   if (p.error) throw new Error(p.error.message)
   const fotos = (f.data ?? []) as PetFoto[]
   const urls: Record<string, string> = {}
-  if (fotos.length) {
-    const { data } = await supabase.storage.from('pm-fotos-pets').createSignedUrls(fotos.map((x) => x.path), 3600)
-    for (const d of data ?? []) if (d.path && d.signedUrl) urls[d.path] = d.signedUrl
-  }
+  const todos = [...fotos.map((x) => x.path), ...((p.data ?? []) as Pet[]).map((x) => x.foto_perfil_path ?? '')]
+  Object.assign(urls, await urlsDosPets(todos))
   return { pets: (p.data ?? []) as Pet[], fotos, urls }
 }
 
@@ -26,6 +24,8 @@ export default function Pets({ admin }: { admin: boolean }) {
   const [enviando, setEnviando] = useState<string | null>(null)
   const alvo = useRef<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const inputPerfil = useRef<HTMLInputElement>(null)
+  const alvoPerfil = useRef<Pet | null>(null)
 
   const falha = (e: unknown) => setMsg(e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e))
 
@@ -61,6 +61,24 @@ export default function Pets({ admin }: { admin: boolean }) {
     }
   }
 
+  async function trocarPerfil(p: Pet, arq: File) {
+    setEnviando(p.id)
+    setMsg('')
+    try {
+      const path = `${p.id}/perfil-${crypto.randomUUID()}.jpg`
+      const up = await supabase.storage.from('pm-fotos-pets').upload(path, await recortarQuadrado(arq), { contentType: 'image/jpeg' })
+      if (up.error) throw up.error
+      const { error } = await supabase.from('pm_pets').update({ foto_perfil_path: path }).eq('id', p.id)
+      if (error) throw error
+      if (p.foto_perfil_path) await supabase.storage.from('pm-fotos-pets').remove([p.foto_perfil_path])
+    } catch (e) {
+      falha(e)
+    } finally {
+      setEnviando(null)
+      await recarregar()
+    }
+  }
+
   async function apagarFoto(f: PetFoto) {
     await supabase.storage.from('pm-fotos-pets').remove([f.path])
     const { error } = await supabase.from('pm_pet_fotos').delete().eq('id', f.id)
@@ -71,7 +89,7 @@ export default function Pets({ admin }: { admin: boolean }) {
 
   async function apagarPet(p: Pet) {
     if (!confirm(`Remover ${p.nome} e todas as fotos dele?`)) return
-    const paths = dados.fotos.filter((f) => f.pet_id === p.id).map((f) => f.path)
+    const paths = [...dados.fotos.filter((f) => f.pet_id === p.id).map((f) => f.path), ...(p.foto_perfil_path ? [p.foto_perfil_path] : [])]
     if (paths.length) await supabase.storage.from('pm-fotos-pets').remove(paths)
     const { error } = await supabase.from('pm_pets').delete().eq('id', p.id)
     if (error) falha(error)
@@ -90,14 +108,33 @@ export default function Pets({ admin }: { admin: boolean }) {
   return (
     <div className="space-y-4">
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
+      <input ref={inputPerfil} type="file" accept="image/*" hidden onChange={(e) => { const a = e.target.files?.[0]; const p = alvoPerfil.current; e.target.value = ''; if (a && p) void trocarPerfil(p, a) }} />
       <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files?.length && alvo.current && void enviar(alvo.current, e.target.files).then(() => input.current && (input.current.value = ''))} />
 
       {dados.pets.map((p) => {
         const fotos = dados.fotos.filter((f) => f.pet_id === p.id)
         return (
           <section key={p.id} className="vidro space-y-3 p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                disabled={!admin || enviando === p.id}
+                aria-label={`Trocar foto de perfil de ${p.nome}`}
+                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-cyan-700/10 text-cyan-800"
+                onClick={() => { alvoPerfil.current = p; inputPerfil.current?.click() }}
+              >
+                {p.foto_perfil_path && dados.urls[p.foto_perfil_path] ? (
+                  <img src={dados.urls[p.foto_perfil_path]} alt={p.nome} className="h-full w-full object-cover" />
+                ) : (
+                  <Dog size={28} className="mx-auto" />
+                )}
+                {admin && (
+                  <span className="absolute inset-x-0 bottom-0 flex justify-center bg-black/45 py-0.5 text-white">
+                    <ImagePlus size={12} />
+                  </span>
+                )}
+              </button>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-extrabold text-slate-900">{p.nome}</h2>
                 <p className="text-[12px] text-slate-500">
                   {p.especie === 'gato' ? 'Gato' : 'Cachorro'} · {fotos.length} foto(s)

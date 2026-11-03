@@ -142,4 +142,7 @@ create policy pm_pedidos_membros on public.pm_pedidos for all to authenticated u
 drop policy if exists pm_ao_vivo_membros on public.pm_ao_vivo;
 create policy pm_ao_vivo_membros on public.pm_ao_vivo for all to authenticated using (public.pm_is_membro()) with check (public.pm_is_membro());
 
+-- Foto de perfil do pet (arquivo no bucket pm-fotos-pets, fora das fotos de aprendizado)
+alter table public.pm_pets add column if not exists foto_perfil_path text;
+
 notify pgrst, 'reload schema';
