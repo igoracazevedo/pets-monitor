@@ -145,4 +145,8 @@ create policy pm_ao_vivo_membros on public.pm_ao_vivo for all to authenticated u
 -- Foto de perfil do pet (arquivo no bucket pm-fotos-pets, fora das fotos de aprendizado)
 alter table public.pm_pets add column if not exists foto_perfil_path text;
 
+-- Câmeras achadas na rede: identificadas pelo número de série (o IP muda); o nome é o apelido que você dá no app
+alter table public.pm_cameras add column if not exists identificador text unique;
+alter table public.pm_cameras add column if not exists ip_atual text;
+
 notify pgrst, 'reload schema';

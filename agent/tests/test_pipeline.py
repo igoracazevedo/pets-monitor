@@ -49,8 +49,11 @@ class BancoFalso:
     def pets(self):
         return pets
 
-    def garantir_camera(self, nome, ambiente, ordem):
-        return {"id": f"cam-{nome}"}
+    def garantir_camera(self, nome, ambiente, ordem, identificador=None, ip=None):
+        return {"id": f"cam-{identificador or nome}", "nome": nome, "ativo": True}
+
+    def cameras(self):
+        return [{"id": "cam-sn:AAA", "nome": "Sala de jantar", "ativo": True}]
 
     def status_camera(self, cid, ok, erro=None, quadro_path=None):
         self.status.append((cid, ok, erro))
@@ -109,3 +112,26 @@ mem.atualizar("Quarto", "p", 0.05)
 assert por_tamanho([duas[1]], cinza.shape, "Quarto", pets_p, mem)[0].nome == "Mavi"
 assert por_tamanho([duas[0]], cinza.shape, "Quarto", pets_p, mem)[0].nome == "Bebela"
 print("identificação à noite por tamanho: ok")
+
+
+# ---- descoberta pela rede: o apelido vem do banco, o IP pode mudar ----
+from pets_agent import descoberta
+
+achadas_falsas = [{"ip": "10.0.0.21", "identificador": "sn:AAA", "modelo": "IPC"}]
+descoberta.ip_local = lambda: "10.0.0.5"
+descoberta.descobrir = lambda base, u, s, excluir=None, ignorados=None: achadas_falsas
+cfg2 = {**cfg, "cameras": [], "credencial_intelbras": {"usuario": "admin", "senha": "x"}}
+db2 = BancoFalso()
+v2 = Varredura(cfg2, db2, DetectorFalso())
+assert v2.precisa_redescobrir()
+assert v2.redescobrir() == 1
+assert v2.cameras[0][0]["host"] == "10.0.0.21" and v2.cameras[0][1]["nome"].startswith("Câmera")
+v2.ultimo_nomes = 0
+v2.atualizar_nomes()
+assert v2.cameras[0][1]["nome"] == "Sala de jantar"  # apelido veio do banco
+achadas_falsas[0]["ip"] = "10.0.0.99"  # a câmera mudou de IP
+v2.ultima_descoberta = 0
+v2.redescobrir()
+assert v2.cameras[0][0]["host"] == "10.0.0.99" and len(v2.cameras) == 1  # mesma câmera, IP novo
+assert not v2.precisa_redescobrir()
+print("descoberta pela rede: ok")

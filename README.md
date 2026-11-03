@@ -20,7 +20,9 @@ Pré-requisito: Python 3.11 ou 3.12 (python.org, marcando "Add to PATH"). O PC p
 
 1. Copie a pasta `agent` para o PC (ex.: `C:\PetsMonitor`) e dê dois cliques em `windows\instalar.bat`.
 2. Edite o `.env`: `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` (chave *service_role*, só neste PC).
-3. Copie o seu **`camera.properties`** (o mesmo do outro app) para a pasta `agent`. Ele é lido como está: câmeras `intelbras` (foto por HTTP, com RTSP de reserva) e `rtsp` (conexão mantida aberta). O arquivo nunca vai para o git. Alternativa com NVR: `config.nvr.example.yaml`.
+3. Copie o seu **`camera.properties`** (hoje só o login das Intelbras e as câmeras `rtsp` dele são usados) (o mesmo do outro app) para a pasta `agent`. Ele é lido como está: câmeras `intelbras` (foto por HTTP, com RTSP de reserva) e `rtsp` (conexão mantida aberta). O arquivo nunca vai para o git. Alternativa com NVR: `config.nvr.example.yaml`.
+
+**As câmeras Intelbras são achadas sozinhas pela rede**, pelo número de série, então o IP pode mudar. Na primeira volta elas aparecem no site (aba **Câmeras**) como "Câmera xxxx": olhe a imagem e toque no lápis para dar o nome do local. Câmera genérica (marca desconhecida): `windows\sondar.bat` descobre o caminho RTSP certo, e você a coloca no `camera.properties` como `tipo=rtsp`.
 4. `windows\testar.bat` confere uma câmera (mostra se achou cachorro).
 5. `windows\iniciar.bat` começa a varrer. Para subir sozinho ao entrar no Windows, rode `windows\iniciar-com-o-windows.bat`.
 

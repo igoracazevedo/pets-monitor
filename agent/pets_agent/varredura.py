@@ -42,10 +42,16 @@ class Varredura:
         self.detector = detector
         self.pets = db.pets()
         self.ident = Identificador(self.pets, cfg["identificacao"]["pontuacao_minima"], cfg["identificacao"]["margem_minima"])
-        self.cameras = []
+        self.fixas = []
         for i, c in enumerate(cfg["cameras"]):
-            reg = db.garantir_camera(c["nome"], c.get("ambiente"), i)
-            self.cameras.append((c, reg))
+            self.fixas.append((c, db.garantir_camera(c["nome"], c.get("ambiente"), i)))
+        self.cameras = list(self.fixas)
+        # câmeras Intelbras achadas na rede (pelo número de série); o apelido vem do app
+        self.cred = cfg.get("credencial_intelbras")
+        self.achadas: dict[str, tuple[dict, dict]] = {}
+        self.ignorados: set[str] = set()
+        self.ultima_descoberta = 0.0
+        self.ultimo_nomes = 0.0
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
         self.ultimo: dict[str, dict] = {}
         self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
@@ -57,16 +63,54 @@ class Varredura:
         i = self.cfg["identificacao"]
         self.ident = Identificador(self.pets, i["pontuacao_minima"], i["margem_minima"])
 
+    def precisa_redescobrir(self) -> bool:
+        if not self.cred:
+            return False
+        idade = time.time() - self.ultima_descoberta
+        com_falha = any(cid in self.falhas for _, reg in self.achadas.values() for cid in [reg["id"]])
+        return idade >= 300 or (idade >= 60 and (com_falha or not self.achadas))
+
+    def redescobrir(self) -> int:
+        """Procura as câmeras Intelbras na rede e atualiza o IP de cada uma. Câmera nova entra com o nome 'Câmera xxxx' para você renomear no app."""
+        from . import descoberta
+
+        self.ultima_descoberta = time.time()
+        base = ".".join(descoberta.ip_local().split(".")[:3])
+        fixos = {c.get("host") or c.get("url", "").split("@")[-1].split("/")[0].split(":")[0] for c, _ in self.fixas}
+        for a in descoberta.descobrir(base, self.cred["usuario"], self.cred["senha"], fixos, self.ignorados):
+            ident = a["identificador"]
+            reg = self.db.garantir_camera(f"Câmera {ident[-4:]}", None, 100 + len(self.achadas), ident, a["ip"])
+            if ident in self.achadas:
+                reg = {**self.achadas[ident][1], "ip_atual": a["ip"]}
+            cfg_cam = {"nome": reg["nome"], "fonte": "intelbras", "host": a["ip"], "usuario": self.cred["usuario"], "senha": self.cred["senha"]}
+            self.achadas[ident] = (cfg_cam, reg)
+            self.falhas.pop(reg["id"], None)  # IP novo: tenta já
+        self.cameras = self.fixas + list(self.achadas.values())
+        return len(self.achadas)
+
+    def atualizar_nomes(self):
+        """Pega do banco o apelido e o liga/desliga de cada câmera (você muda no app)."""
+        if time.time() - self.ultimo_nomes < 60:
+            return
+        self.ultimo_nomes = time.time()
+        try:
+            atuais = {c["id"]: c for c in self.db.cameras()}
+        except Exception:
+            return
+        self.cameras = [(c, {**reg, **{k: atuais[reg["id"]].get(k, reg.get(k)) for k in ("nome", "ativo")}} if reg["id"] in atuais else reg) for c, reg in self.cameras]
+
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
-        nome = cfg_cam["nome"]
-        n_falhas, ate = self.falhas.get(nome, (0, 0.0))
+        nome, cid = reg["nome"], reg["id"]  # nome = apelido dado no app; cid = identidade estável da câmera
+        if reg.get("ativo") is False:
+            return f"{nome}: desativada"
+        n_falhas, ate = self.falhas.get(cid, (0, 0.0))
         if n_falhas and time.time() < ate:  # câmera fora do ar: não segura as outras a cada volta
             return f"{nome}: sem sinal (tenta de novo em {int(ate - time.time())} s)"
         try:
             frame = capture.capturar(cfg_cam)
-            self.falhas.pop(nome, None)
+            self.falhas.pop(cid, None)
         except Exception as e:  # câmera fora do ar não derruba as outras
-            self.falhas[nome] = (n_falhas + 1, time.time() + min(300, 20 * 2**n_falhas))
+            self.falhas[cid] = (n_falhas + 1, time.time() + min(300, 20 * 2**n_falhas))
             self.db.status_camera(reg["id"], False, str(e))
             return f"{nome}: ERRO {e}"
 
@@ -75,7 +119,7 @@ class Varredura:
         usados: set[str] = set()
         marcas, achados = [], []
         if dets and eh_noturno(frame):  # infravermelho: sem cor, decide pelo tamanho
-            palpites = por_tamanho([d.caixa for d in dets], frame.shape, nome, self.pets, self.tamanhos)
+            palpites = por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
         else:
             palpites = []
             for d in dets:
@@ -83,7 +127,7 @@ class Varredura:
                 if p.pet_id:
                     usados.add(p.pet_id)  # um pet aparece uma vez por quadro
                     if p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite
-                        self.tamanhos.atualizar(nome, p.pet_id, area_relativa(d.caixa, frame.shape))
+                        self.tamanhos.atualizar(cid, p.pet_id, area_relativa(d.caixa, frame.shape))
                 palpites.append(p)
         for d, p in zip(dets, palpites):
             achados.append((d, p))
@@ -91,15 +135,15 @@ class Varredura:
 
         agora_ts = time.time()
         quadro_path = None
-        if agora_ts - self.ultimo_quadro.get(nome, 0) >= self.cfg["quadro_da_camera_a_cada_s"]:
-            quadro_path = f"cameras/{slug(nome)}.jpg"
+        if agora_ts - self.ultimo_quadro.get(cid, 0) >= self.cfg["quadro_da_camera_a_cada_s"]:
+            quadro_path = f"cameras/{cid}.jpg"
             self.db.enviar_foto(quadro_path, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
-            self.ultimo_quadro[nome] = agora_ts
+            self.ultimo_quadro[cid] = agora_ts
         self.db.status_camera(reg["id"], True, quadro_path=quadro_path)
 
         foto = None
         for d, p in achados:
-            chave = p.pet_id or f"?{nome}"
+            chave = p.pet_id or f"?{cid}"
             x1, y1, x2, y2 = d.caixa
             linha = {
                 "camera_id": reg["id"],
@@ -108,13 +152,13 @@ class Varredura:
                 "x": round(x1 / w, 4), "y": round(y1 / h, 4), "w": round((x2 - x1) / w, 4), "h": round((y2 - y1) / h, 4),
             }
             ant = self.ultimo.get(chave)
-            mudou = not ant or ant["camera"] != nome or agora_ts - ant["ts"] >= self.cfg["historico_a_cada_s"]
+            mudou = not ant or ant["camera"] != cid or agora_ts - ant["ts"] >= self.cfg["historico_a_cada_s"]
             if mudou:
                 if foto is None:
-                    foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{slug(nome)}-{datetime.now():%H%M%S}.jpg"
+                    foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{cid[:8]}-{datetime.now():%H%M%S}.jpg"
                     self.db.enviar_foto(foto, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
                 self.db.avistamento({**linha, "pet_id": p.pet_id, "especie": d.especie, "snapshot_path": foto})
-                self.ultimo[chave] = {"camera": nome, "ts": agora_ts, "foto": foto}
+                self.ultimo[chave] = {"camera": cid, "ts": agora_ts, "foto": foto}
             else:
                 ant["ts"] = ant["ts"]  # mantém a hora do último registro no histórico
             if p.pet_id:
@@ -126,18 +170,21 @@ class Varredura:
         if forcar:  # pedido "onde estão agora?": grava foto nova de cada cão visto, mesmo sem ter mudado de câmera
             self.ultimo.clear()
             self.ultimo_quadro.clear()
+        self.atualizar_nomes()
         return [self.uma_camera(c, r) for c, r in self.cameras]
 
     def ao_vivo(self) -> int:
         """Um quadro de cada câmera, em paralelo, num caminho fixo (o site recarrega a imagem a cada ~2 s)."""
 
         def um(par):
-            c, _ = par
+            c, reg = par
+            if reg.get("ativo") is False:
+                return 0
             try:
-                self.db.enviar_foto(f"ao-vivo/{slug(c['nome'])}.jpg", _jpeg(capture.capturar(c), 960))
+                self.db.enviar_foto(f"ao-vivo/{reg['id']}.jpg", _jpeg(capture.capturar(c), 960))
                 return 1
             except Exception as e:
-                print(f"  ao vivo {c['nome']}: {e}", flush=True)
+                print(f"  ao vivo {reg['nome']}: {e}", flush=True)
                 return 0
 
         with ThreadPoolExecutor(max_workers=max(1, len(self.cameras))) as ex:

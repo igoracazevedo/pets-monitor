@@ -129,6 +129,34 @@ def cmd_descobrir(args):
     print("\nSe há câmeras NOVAS com foto, abra as fotos para ver qual é cada uma e troque o IP no camera.properties.")
 
 
+CAMINHOS_RTSP = [
+    "/", "/stream1", "/stream2", "/live", "/live/ch0", "/live/ch00_0", "/11", "/12", "/h264", "/h264Preview_01_main", "/h264Preview_01_sub",
+    "/Streaming/Channels/101", "/Streaming/Channels/102", "/cam/realmonitor?channel=1&subtype=0", "/cam/realmonitor?channel=1&subtype=1",
+    "/onvif1", "/onvif2", "/profile1", "/ch0_0.h264", "/user=admin_password=_channel=1_stream=0.sdp?real_stream", "/av0_0", "/videoMain", "/mpeg4", "/1", "/cam1/h264",
+]
+
+
+def cmd_sondar(args):
+    """Câmera genérica: testa os caminhos RTSP mais comuns e diz qual devolve imagem."""
+    from urllib.parse import quote
+
+    cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
+    print(f"Testando {len(CAMINHOS_RTSP)} caminhos em {args.ip}:{args.porta} (uns 5 s cada se não existir)...")
+    achou = False
+    for c in CAMINHOS_RTSP:
+        url = f"rtsp://{cred}{args.ip}:{args.porta}{c}"
+        try:
+            capture._rtsp(url, descartar=2)
+            print(f"  FUNCIONA: {c}")
+            print(f"  -> no camera.properties:  camera.N.rtsp=rtsp://{args.ip}:{args.porta}{c}")
+            achou = True
+            break
+        except Exception as e:
+            print(f"  {c}: {str(e)[:50]}")
+    if not achou:
+        print("Nenhum caminho comum funcionou. Veja no manual/app da câmera o endereço RTSP e o usuário/senha da câmera (nem sempre é o mesmo do app).")
+
+
 def cmd_ensinar(args):
     """Lê fotos em fotos/<nome do pet>/*.jpg, calcula a cor de cada um e guarda o perfil no Supabase."""
     cfg = config.carregar(args.config)
@@ -209,9 +237,13 @@ def cmd_varrer(args):
     if not v.pets:
         print("Aviso: nenhum pet cadastrado. Rode primeiro: python -m pets_agent ensinar")
     if args.uma_vez:
+        if v.cred:
+            v.redescobrir()
         for linha in v.todas():
             print(linha)
         return
+    if v.cred:
+        print(f"Procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s). Dê apelido a cada uma na aba Câmeras do site.")
     print(f"Varrendo {len(v.cameras)} câmera(s) a cada {cfg['intervalo_s']} s. Ctrl+C para parar.")
     ultimo_sync = 0.0
     ultima_varredura = 0.0
@@ -222,6 +254,8 @@ def cmd_varrer(args):
                 ultimo_sync = ini
                 if aprender_do_site(db, v.detector):
                     v.recarregar_pets()
+            if v.precisa_redescobrir():
+                print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
             pedidos = db.pedidos_pendentes()
             if pedidos:  # "onde estão agora?" pedido pelo site
                 for linha in v.todas(forcar=True):
@@ -247,6 +281,12 @@ def main():
     t = sub.add_parser("testar", help="tira um quadro de uma câmera e mostra o que o detector achou")
     t.add_argument("camera")
     t.set_defaults(fn=cmd_testar)
+    so = sub.add_parser("sondar", help="câmera genérica: descobre o caminho RTSP que funciona")
+    so.add_argument("ip")
+    so.add_argument("usuario", nargs="?", default="")
+    so.add_argument("senha", nargs="?", default="")
+    so.add_argument("--porta", type=int, default=554)
+    so.set_defaults(fn=cmd_sondar)
     ds = sub.add_parser("descobrir", help="procura as câmeras na rede (quando o IP mudou)")
     ds.set_defaults(fn=cmd_descobrir)
     dg = sub.add_parser("diagnosticar", help="testa a rede de cada câmera (portas e foto HTTP)")

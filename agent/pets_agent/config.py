@@ -39,6 +39,12 @@ def carregar(caminho: str | None = None) -> dict:
         p = Path(arq_cam)
         cfg["cameras"] = carregar_cameras(p if p.is_absolute() else (arq.parent / p if (arq.parent / p).exists() else RAIZ / p))
     cfg.setdefault("cameras", [])
+    if cfg.get("descobrir_rede"):  # as Intelbras são achadas pela rede; do arquivo só sai o login delas
+        intel = [c for c in cfg["cameras"] if c.get("fonte") == "intelbras"]
+        if not intel:
+            raise SystemExit("descobrir_rede: o camera.properties precisa ter ao menos uma câmera 'intelbras' com usuário e senha.")
+        cfg["credencial_intelbras"] = {"usuario": intel[0]["usuario"], "senha": intel[0]["senha"]}
+        cfg["cameras"] = [c for c in cfg["cameras"] if c.get("fonte") != "intelbras"]
     cfg.setdefault("intervalo_s", 15)
     cfg.setdefault("historico_a_cada_s", 300)
     cfg.setdefault("quadro_da_camera_a_cada_s", 60)

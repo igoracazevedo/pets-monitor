@@ -54,7 +54,20 @@ class Supabase:
         return self._rest("GET", "pm_cameras", {"select": "*", "order": "ordem,nome"})
 
     # --- escrita ---
-    def garantir_camera(self, nome: str, ambiente: str | None, ordem: int) -> dict:
+    def garantir_camera(self, nome: str, ambiente: str | None, ordem: int, identificador: str | None = None, ip: str | None = None) -> dict:
+        """Câmeras descobertas na rede são achadas pelo identificador (número de série); as fixas, pelo nome."""
+        if identificador:
+            achadas = self._rest("GET", "pm_cameras", {"select": "*", "identificador": f"eq.{identificador}"})
+            if achadas:
+                if ip and achadas[0].get("ip_atual") != ip:
+                    self._rest("PATCH", "pm_cameras", {"id": f"eq.{achadas[0]['id']}"}, json={"ip_atual": ip})
+                    achadas[0]["ip_atual"] = ip
+                return achadas[0]
+            existentes = {c["nome"] for c in self._rest("GET", "pm_cameras", {"select": "nome"})}
+            novo = nome
+            while novo in existentes:
+                novo += "*"
+            return self._rest("POST", "pm_cameras", json={"nome": novo, "ambiente": ambiente, "ordem": ordem, "identificador": identificador, "ip_atual": ip}, extra={"Prefer": "return=representation"})[0]
         achadas = self._rest("GET", "pm_cameras", {"select": "*", "nome": f"eq.{nome}"})
         if achadas:
             return achadas[0]

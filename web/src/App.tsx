@@ -74,7 +74,7 @@ export default function App() {
       <main className="p-4">
         {aba === 'inicio' && <Inicio />}
         {aba === 'historico' && <Historico />}
-        {aba === 'cameras' && <Cameras />}
+        {aba === 'cameras' && <Cameras admin={acesso.admin} />}
         {aba === 'pets' && <Pets admin={acesso.admin} />}
         {aba === 'ajustes' && <Ajustes admin={acesso.admin} />}
       </main>
