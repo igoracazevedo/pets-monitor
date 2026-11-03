@@ -8,3 +8,5 @@ agent/*.jpg
 agent/*.pt
 __pycache__/
 .venv/
+agent/tamanhos.json
+agent/.env

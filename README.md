@@ -15,20 +15,22 @@ Rode `supabase/schema.sql` no SQL Editor (pode rodar de novo a cada atualizaçã
 Importe o repositório com **Root Directory = `web`**. Variáveis (opcionais, já há padrões):
 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Login Google usa o provedor já ativo no Supabase; adicione a URL do site em *Authentication → URL Configuration*.
 
-## 3. Programa de casa
-```bash
-cd agent
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env              # SUPABASE_URL, SUPABASE_SERVICE_KEY, URLs RTSP
-cp config.example.yaml config.yaml
-python -m pets_agent testar <camera>      # confere uma câmera
-python -m pets_agent ensinar --pasta fotos  # fotos/<NomePet>/*.jpg
-python -m pets_agent varrer               # varredura contínua (--uma-vez p/ teste)
-```
-Também há `Dockerfile` para deixar rodando 24h.
+## 3. Programa de casa (Windows)
+Pré-requisito: Python 3.11 ou 3.12 (python.org, marcando "Add to PATH"). O PC precisa ficar ligado e na mesma rede do NVR.
 
-Dica RTSP: `rtsp://usuario:senha@IP:554/stream1` (varia por marca). Use fotos de cada pet em ângulos e luz diferentes para ensinar.
+1. Copie a pasta `agent` para o PC (ex.: `C:\PetsMonitor`) e dê dois cliques em `windows\instalar.bat`.
+2. Edite o `.env`: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (chave *service_role*, só neste PC) e `NVR_IP`, `NVR_USUARIO`, `NVR_SENHA`.
+3. Edite o `config.yaml`: nomes dos ambientes e o **canal** de cada câmera no NVR.
+4. `windows\testar.bat` confere uma câmera (mostra se achou cachorro).
+5. `windows\iniciar.bat` começa a varrer. Para subir sozinho ao entrar no Windows, rode `windows\iniciar-com-o-windows.bat`.
+
+Fotos dos pets: envie pelo site (aba **Pets**). O programa aprende sozinho em até 2 min.
+
+Em Linux/Raspberry: `pip install -r requirements.txt` e `python -m pets_agent varrer`.
+
+### Como identifica cada pet
+- **De dia:** pela cor do pelo (comparada com as fotos ensinadas).
+- **À noite (infravermelho, imagem cinza):** pelo tamanho. Informe o *porte* de cada pet na aba Pets (maior/menor da casa). Com dois no quadro, o maior é o de maior porte. Com um só, usa o tamanho que ele costuma ter naquela câmera (aprendido de dia). Sem certeza, registra "incerto" em vez de chutar.
 
 ## Uso no site
 - **Início → Onde estão agora?** pede uma varredura na hora e mostra a foto e a câmera de cada cachorra.

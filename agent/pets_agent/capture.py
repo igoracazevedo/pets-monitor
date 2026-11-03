@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote
 
 import cv2
 import numpy as np
@@ -33,11 +34,22 @@ def _http(url: str, usuario: str | None, senha: str | None) -> np.ndarray:
     return img
 
 
+def url_nvr(cam: dict) -> str:
+    """NVR Intelbras/Dahua: um IP, vários canais. Usuário e senha entram no .env e são codificados aqui (senha com @, # etc. funciona)."""
+    usuario, senha, ip = (os.environ.get(k, "") for k in ("NVR_USUARIO", "NVR_SENHA", "NVR_IP"))
+    if not (usuario and senha and ip):
+        raise RuntimeError("defina NVR_IP, NVR_USUARIO e NVR_SENHA no .env")
+    porta = os.environ.get("NVR_PORTA", "554")
+    return f"rtsp://{quote(usuario, safe='')}:{quote(senha, safe='')}@{ip}:{porta}/cam/realmonitor?channel={int(cam['canal'])}&subtype={int(cam.get('subtipo', 1))}"
+
+
 def capturar(cam: dict) -> np.ndarray:
     """Um quadro da câmera (BGR). `fonte`: rtsp | http | arquivo."""
     fonte = cam.get("fonte", "rtsp")
     if fonte == "rtsp":
         return _rtsp(cam["url"])
+    if fonte == "nvr":
+        return _rtsp(url_nvr(cam))
     if fonte == "http":
         return _http(cam["url"], cam.get("usuario"), cam.get("senha"))
     if fonte == "arquivo":

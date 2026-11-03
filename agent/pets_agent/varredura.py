@@ -9,6 +9,7 @@ import numpy as np
 
 from . import capture
 from .identify import Identificador, caracteristica
+from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
 from .store import Supabase, agora
 
 
@@ -47,6 +48,7 @@ class Varredura:
             self.cameras.append((c, reg))
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
         self.ultimo: dict[str, dict] = {}
+        self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
         self.ultimo_quadro: dict[str, float] = {}
 
     def recarregar_pets(self):
@@ -66,11 +68,18 @@ class Varredura:
         dets = self.detector.detectar(frame)
         usados: set[str] = set()
         marcas, achados = [], []
-        for d in dets:
-            feat = caracteristica(frame, d.caixa)
-            p = self.ident.palpite(feat, usados)
-            if p.pet_id:
-                usados.add(p.pet_id)  # um pet aparece uma vez por quadro
+        if dets and eh_noturno(frame):  # infravermelho: sem cor, decide pelo tamanho
+            palpites = por_tamanho([d.caixa for d in dets], frame.shape, nome, self.pets, self.tamanhos)
+        else:
+            palpites = []
+            for d in dets:
+                p = self.ident.palpite(caracteristica(frame, d.caixa), usados)
+                if p.pet_id:
+                    usados.add(p.pet_id)  # um pet aparece uma vez por quadro
+                    if p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite
+                        self.tamanhos.atualizar(nome, p.pet_id, area_relativa(d.caixa, frame.shape))
+                palpites.append(p)
+        for d, p in zip(dets, palpites):
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 

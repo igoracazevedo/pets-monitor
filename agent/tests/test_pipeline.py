@@ -86,3 +86,26 @@ v.todas()                                       # mesma câmera, parado: não re
 assert len(db.avist) == 1 and len(db.pos) == 2, (len(db.avist), len(db.pos))
 assert db.pos[-1]["pet_id"] == "p1" and db.pos[-1]["snapshot_path"].startswith("avistamentos/")
 print("varredura: ok", r1)
+
+
+# ---- noite: tamanho no lugar de cor ----
+from pets_agent.noturno import MemoriaTamanhos, eh_noturno, por_tamanho
+
+cinza = np.full((480, 640, 3), 120, np.uint8)
+assert eh_noturno(cinza) and not eh_noturno(cena(MARROM, CAIXA))
+duas = [(100, 100, 220, 200), (300, 120, 520, 400)]  # pequena e grande
+pets_p = [
+    {"id": "g", "nome": "Mavi", "porte": "grande"},
+    {"id": "p", "nome": "Bebela", "porte": "pequeno"},
+]
+mem = MemoriaTamanhos()
+r = por_tamanho(duas, cinza.shape, "Quarto", pets_p, mem)
+assert [x.nome for x in r] == ["Bebela", "Mavi"], r
+assert [x.nome for x in por_tamanho(duas[::-1], cinza.shape, "Quarto", pets_p, mem)] == ["Mavi", "Bebela"]
+um = por_tamanho([duas[1]], cinza.shape, "Quarto", pets_p, mem)
+assert um[0].como == "incerto"  # um só, sem histórico: não chuta
+mem.atualizar("Quarto", "g", 0.30)
+mem.atualizar("Quarto", "p", 0.05)
+assert por_tamanho([duas[1]], cinza.shape, "Quarto", pets_p, mem)[0].nome == "Mavi"
+assert por_tamanho([duas[0]], cinza.shape, "Quarto", pets_p, mem)[0].nome == "Bebela"
+print("identificação à noite por tamanho: ok")
