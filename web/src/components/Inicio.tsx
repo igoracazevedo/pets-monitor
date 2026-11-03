@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Cat, Dog, RefreshCw, Users } from 'lucide-react'
-import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao, type Presenca } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type EventoBanheiro, type Pet, type Posicao, type Presenca } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
-type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[] }
+type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[]; banheiro: EventoBanheiro[] }
 
 async function carregar(): Promise<Dados> {
-  const [pets, pos, cams, desc, presenca] = await Promise.all([
+  const [pets, pos, cams, desc, presenca, banheiro] = await Promise.all([
     supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'),
     supabase.from('pm_ultima_posicao').select('*'),
     supabase.from('pm_cameras').select('*'),
@@ -19,6 +19,7 @@ async function carregar(): Promise<Dados> {
       .neq('especie', 'pessoa')
       .gte('visto_em', new Date(Date.now() - 3600_000).toISOString()),
     supabase.from('pm_presenca').select('*'),
+    supabase.from('pm_banheiro_eventos').select('*').gte('visto_em', new Date(Date.now() - 86400_000).toISOString()).order('visto_em', { ascending: false }).limit(30),
   ])
   if (pets.error) throw new Error(pets.error.message)
   const p = (pos.data ?? []) as Posicao[]
@@ -27,7 +28,8 @@ async function carregar(): Promise<Dados> {
     pets: (pets.data ?? []) as Pet[],
     pos: p,
     cams: (cams.data ?? []) as Camera[],
-    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path)]),
+    banheiro: (banheiro.data ?? []) as EventoBanheiro[],
+    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path), ...((banheiro.data ?? []) as EventoBanheiro[]).slice(0, 6).map((b) => b.snapshot_path)]),
     gente,
     perfis: await urlsDosPets(((pets.data ?? []) as Pet[]).map((x) => x.foto_perfil_path)),
     desconhecidos: desc.count ?? 0,
@@ -40,7 +42,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
   const [comandando, setComandando] = useState(false)
   const [resposta, setResposta] = useState('')
   const { abrir, janela } = useVisualizador()
-  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [] })
+  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [], banheiro: [] })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
   const pessoasAgora = dados.gente.filter((g) => g.pessoas > 0 && minutosDesde(g.ultima_vez) < 3)
@@ -96,19 +98,11 @@ export default function Inicio({ admin }: { admin: boolean }) {
   }
 
   const sem = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  /** Linha de comando: "Mavi na Sala" -> o programa de casa tira a foto de agora da câmera, marca o pet e aprende com ela. */
-  async function comando() {
-    const t = sem(texto)
-    const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))
-    const camera = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome)))
-    if (!pet || !camera) {
-      setResposta(`Não entendi. Escreva o pet e a câmera, por exemplo: "${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}". ${!pet ? 'Pets: ' + dados.pets.map((p) => p.nome).join(', ') + '. ' : ''}${!camera ? 'Câmeras: ' + dados.cams.map((c) => c.nome).join(', ') + '.' : ''}`)
-      return
-    }
+  async function pedir(linha: Record<string, string>, aviso: string) {
     setComandando(true)
-    setResposta(`Procurando ${pet.nome} na câmera ${camera.nome}…`)
+    setResposta(aviso)
     try {
-      const { data, error } = await supabase.from('pm_pedidos').insert({ tipo: 'identificar', pet_id: pet.id, camera_id: camera.id }).select('id').single()
+      const { data, error } = await supabase.from('pm_pedidos').insert(linha).select('id').single()
       if (error || !data) throw error ?? new Error('Não consegui enviar o pedido.')
       let msg = 'O programa de casa não respondeu. Confira se o iniciar.bat está aberto.'
       for (let i = 0; i < 30; i++) {
@@ -127,6 +121,28 @@ export default function Inicio({ admin }: { admin: boolean }) {
     } finally {
       setComandando(false)
     }
+  }
+  /** Linha de comando: "Mavi na Sala" -> o programa de casa tira a foto de agora da câmera, marca o pet e aprende com ela. */
+  async function comando() {
+    const t = sem(texto)
+    const rotulo = (['xixi', 'coco', 'limpo'] as const).find((r) => new RegExp(`\\b${r}\\b`).test(t))
+    if (rotulo) {
+      const bs = dados.cams.filter((c) => sem(c.nome).includes('banheiro'))
+      const cam = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome))) ?? (bs.length === 1 ? bs[0] : undefined)
+      if (!cam) {
+        setResposta(`Qual câmera? Escreva, por exemplo: "${rotulo} no ${bs[0]?.nome ?? 'Banheiro'}".`)
+        return
+      }
+      await pedir({ tipo: 'ensinar_banheiro', camera_id: cam.id, rotulo }, `Ensinando "${rotulo}" na câmera ${cam.nome}…`)
+      return
+    }
+    const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))
+    const camera = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome)))
+    if (!pet || !camera) {
+      setResposta(`Não entendi. Escreva o pet e a câmera, por exemplo: "${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}". ${!pet ? 'Pets: ' + dados.pets.map((p) => p.nome).join(', ') + '. ' : ''}${!camera ? 'Câmeras: ' + dados.cams.map((c) => c.nome).join(', ') + '.' : ''}`)
+      return
+    }
+    await pedir({ tipo: 'identificar', pet_id: pet.id, camera_id: camera.id }, `Procurando ${pet.nome} na câmera ${camera.nome}…`)
   }
 
   async function naoEPet(pos: Posicao) {
@@ -156,13 +172,36 @@ export default function Inicio({ admin }: { admin: boolean }) {
         }}
       >
         <div className="flex gap-2">
-          <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={`Ex.: ${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}`} className="min-w-0 flex-1" disabled={comandando} />
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={`Ex.: ${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}  ·  xixi no Banheiro`} className="min-w-0 flex-1" disabled={comandando} />
           <button type="submit" className="botao-principal compacto shrink-0" disabled={comandando || !texto.trim()}>
             Identificar
           </button>
         </div>
         {resposta && <p className="text-[13px] text-slate-600">{resposta}</p>}
       </form>
+      {dados.banheiro.length > 0 && (
+        <div className="vidro space-y-2 p-3">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Banheiro (últimas 24 h)</p>
+          <p className="text-[13px] text-slate-700">
+            {dados.banheiro.filter((b) => b.tipo === 'xixi').length} xixi · {dados.banheiro.filter((b) => b.tipo === 'coco').length} coco
+          </p>
+          <ul className="divide-y divide-slate-200/70">
+            {dados.banheiro.slice(0, 6).map((b) => (
+              <li key={b.id} className="flex items-center gap-3 py-2">
+                {b.snapshot_path && dados.fotos[b.snapshot_path] && <img src={dados.fotos[b.snapshot_path]} alt="" className="h-10 w-16 rounded-lg object-cover" />}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-slate-900">
+                    {b.tipo === 'coco' ? 'Coco' : 'Xixi'} · {dados.pets.find((p) => p.id === b.pet_id)?.nome ?? 'não sei quem'}
+                  </p>
+                  <p className="text-[12px] text-slate-500">
+                    {cam(b.camera_id)?.nome ?? '—'} · {dataHora(b.visto_em)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         {dados.pets.map((pet) => {
           const pos = dados.pos.find((p) => p.pet_id === pet.id)

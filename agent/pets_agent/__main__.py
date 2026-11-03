@@ -449,7 +449,14 @@ def cmd_varrer(args):
                     msg = f"erro: {e}"
                 print(time.strftime("%H:%M:%S"), "[identificar]", msg, flush=True)
                 db.resultado_pedido(ped["id"], msg)
-            pedidos = [p for p in pedidos if p.get("tipo") != "identificar"]
+            for ped in [p for p in pedidos if p.get("tipo") == "ensinar_banheiro"]:
+                try:
+                    msg = v.ensinar_banheiro(ped["camera_id"], ped["rotulo"])
+                except Exception as e:
+                    msg = f"erro: {e}"
+                print(time.strftime("%H:%M:%S"), "[banheiro]", msg, flush=True)
+                db.resultado_pedido(ped["id"], msg)
+            pedidos = [p for p in pedidos if p.get("tipo") not in ("identificar", "ensinar_banheiro")]
             if pedidos:  # "Onde estão agora?" (varredura completa), "Ver ao vivo" (só uma foto de cada câmera) ou teste de aviso
                 tipos = {p.get("tipo", "localizar") for p in pedidos}
                 if "teste" in tipos and v.notificador:

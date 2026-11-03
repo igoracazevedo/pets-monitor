@@ -147,3 +147,5 @@ export async function marcarComoObjeto(camera_id: string, x: number, y: number, 
   if (pets.length) await supabase.from('pm_ultima_posicao').delete().in('pet_id', pets)
   return apagados
 }
+
+export type EventoBanheiro = { id: string; camera_id: string; tipo: 'xixi' | 'coco'; pet_id: string | null; snapshot_path: string | null; visto_em: string }

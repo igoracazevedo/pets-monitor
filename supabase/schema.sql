@@ -253,10 +253,39 @@ alter table public.pm_pedidos add column if not exists camera_id uuid references
 alter table public.pm_pedidos add column if not exists pet_id uuid references public.pm_pets(id) on delete cascade;
 alter table public.pm_pedidos add column if not exists resultado text;
 alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
-alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste', 'identificar'));
+alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste', 'identificar', 'ensinar_banheiro'));
+alter table public.pm_pedidos add column if not exists rotulo text;
 
 -- Remover foto do histórico (admin apaga o arquivo do bucket de quadros)
 drop policy if exists pm_snapshots_apagar on storage.objects;
 create policy pm_snapshots_apagar on storage.objects for delete to authenticated using (bucket_id = 'pm-snapshots' and public.pm_is_admin());
+
+-- Banheiro dos cachorros: exemplos (limpo/xixi/coco) e eventos detectados
+create table if not exists public.pm_banheiro_amostras (
+  id uuid primary key default gen_random_uuid(),
+  camera_id uuid not null references public.pm_cameras(id) on delete cascade,
+  rotulo text not null check (rotulo in ('limpo', 'xixi', 'coco')),
+  snapshot_path text not null,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.pm_banheiro_eventos (
+  id uuid primary key default gen_random_uuid(),
+  camera_id uuid not null references public.pm_cameras(id) on delete cascade,
+  tipo text not null check (tipo in ('xixi', 'coco')),
+  pet_id uuid references public.pm_pets(id) on delete set null,
+  snapshot_path text,
+  visto_em timestamptz not null default now()
+);
+create index if not exists pm_banheiro_eventos_idx on public.pm_banheiro_eventos (visto_em desc);
+alter table public.pm_banheiro_amostras enable row level security;
+alter table public.pm_banheiro_eventos enable row level security;
+drop policy if exists pm_banheiro_amostras_ler on public.pm_banheiro_amostras;
+create policy pm_banheiro_amostras_ler on public.pm_banheiro_amostras for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_banheiro_amostras_admin on public.pm_banheiro_amostras;
+create policy pm_banheiro_amostras_admin on public.pm_banheiro_amostras for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+drop policy if exists pm_banheiro_eventos_ler on public.pm_banheiro_eventos;
+create policy pm_banheiro_eventos_ler on public.pm_banheiro_eventos for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_banheiro_eventos_admin on public.pm_banheiro_eventos;
+create policy pm_banheiro_eventos_admin on public.pm_banheiro_eventos for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
 notify pgrst, 'reload schema';

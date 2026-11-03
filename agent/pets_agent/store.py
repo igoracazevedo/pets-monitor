@@ -58,7 +58,7 @@ class Supabase:
         return r.content
 
     def pedidos_pendentes(self) -> list[dict]:
-        return self._rest("GET", "pm_pedidos", {"select": "id,tipo,camera_id,pet_id", "atendido_em": "is.null"})
+        return self._rest("GET", "pm_pedidos", {"select": "id,tipo,camera_id,pet_id,rotulo", "atendido_em": "is.null"})
 
     def atender_pedidos(self, ids: list[str]):
         for i in ids:
@@ -69,6 +69,15 @@ class Supabase:
 
     def correcao(self, linha: dict):
         self._rest("POST", "pm_correcoes", json=linha)
+
+    def banheiro_amostras(self, camera_id: str) -> list[dict]:
+        return self._rest("GET", "pm_banheiro_amostras", {"select": "rotulo,snapshot_path,created_at", "camera_id": f"eq.{camera_id}"})
+
+    def nova_amostra_banheiro(self, linha: dict):
+        self._rest("POST", "pm_banheiro_amostras", json=linha)
+
+    def evento_banheiro(self, linha: dict):
+        self._rest("POST", "pm_banheiro_eventos", json=linha)
 
     def ao_vivo_ativo(self) -> bool:
         linhas = self._rest("GET", "pm_ao_vivo", {"select": "ate", "id": "eq.1"})

@@ -350,3 +350,47 @@ def test_privacidade():
     assert np.array_equal(out[:, :10], f[:, :10])
     print("privacidade: corpo pixelado, cabeça nítida: ok")
 test_privacidade()
+
+
+def test_banheiro():
+    import cv2
+    import numpy as np
+    from pets_agent.banheiro import Banheiro
+
+    rng = np.random.default_rng(3)
+    base = np.full((480, 640, 3), (200, 205, 208), np.uint8) + rng.integers(0, 6, (480, 640, 3), dtype=np.uint8)
+
+    def com(mancha, cor, tam=(70, 40), pos=(300, 250)):
+        im = base.copy()
+        cv2.ellipse(im, pos, tam, 0, 0, 360, cor, -1)
+        return im
+
+    xixi1, xixi2 = com(1, (120, 200, 225), (90, 50)), com(1, (130, 205, 228), (70, 45), (250, 200))  # amarelado e grande
+    coco1, coco2 = com(1, (40, 70, 90), (18, 12)), com(1, (35, 60, 85), (22, 14), (400, 300))      # escuro e pequeno
+    luz = np.clip(base.astype(np.int16) + 6, 0, 255).astype(np.uint8)
+
+    class DB:
+        def __init__(s):
+            s.imgs, s.l = {}, []
+        def banheiro_amostras(s, cid):
+            return [{"rotulo": r, "snapshot_path": p, "created_at": str(i)} for i, (r, p) in enumerate(s.l)]
+        def baixar_snapshot(s, p):
+            return cv2.imencode(".jpg", s.imgs[p])[1].tobytes()
+        def enviar_foto(s, p, b):
+            s.imgs[p] = cv2.imdecode(np.frombuffer(b, np.uint8), 1)
+        def nova_amostra_banheiro(s, row):
+            s.l.append((row["rotulo"], row["snapshot_path"]))
+
+    db = DB()
+    b = Banheiro(db)
+    jp = lambda f: cv2.imencode(".jpg", f)[1].tobytes()
+    assert b.classificar("c1", xixi1) is None  # ainda sem exemplos
+    for rot, im in (("limpo", base), ("xixi", xixi1), ("coco", coco1), ("xixi", xixi2), ("coco", coco2)):
+        b.ensinar("c1", rot, im, jp)
+    assert b.classificar("c1", luz)[0] == "limpo"
+    assert b.classificar("c1", com(1, (125, 200, 226), (80, 48), (330, 260)))[0] == "xixi"
+    assert b.classificar("c1", com(1, (38, 66, 88), (20, 13), (200, 350)))[0] == "coco"
+    print("banheiro: limpo, xixi e coco reconhecidos: ok")
+
+
+test_banheiro()

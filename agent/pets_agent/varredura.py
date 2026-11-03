@@ -29,6 +29,10 @@ def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, floa
     return inter / uni if uni > 0 else 0.0
 
 
+def _sem_acento(t: str) -> str:
+    return unicodedata.normalize("NFD", t).encode("ascii", "ignore").decode().lower()
+
+
 def _jpeg(frame: np.ndarray, largura: int) -> bytes:
     h, w = frame.shape[:2]
     if w > largura:
@@ -65,6 +69,10 @@ class Varredura:
         self.ultima_descoberta = 0.0
         self.ultimo_nomes = 0.0
         self.estado_presenca: dict[str, tuple[int, float, str]] = {}
+        from .banheiro import Banheiro
+
+        self.banheiro = Banheiro(db)
+        self.estado_banheiro: dict[str, str] = {}
         from .notificar import Notificador
 
         self.notificador = Notificador(db) if hasattr(db, "assinaturas_push") else None
@@ -249,6 +257,12 @@ class Varredura:
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 
+        if "banheiro" in _sem_acento(nome):
+            try:
+                self.vigiar_banheiro(cid, nome, frame, dets)
+            except Exception as e:
+                print(f"  banheiro {nome}: {e}", flush=True)
+
         agora_ts = time.time()
         publico = []  # imagem protegida, calculada só se alguma foto for mesmo enviada
 
@@ -307,6 +321,50 @@ class Varredura:
         if n_pessoas:
             nomes = (nomes + ", " if nomes else "") + (", ".join(quem) + (" + " if quem and desconhecidas else "") if quem else "") + (f"{desconhecidas} pessoa(s)" if desconhecidas or not quem else "")
         return f"{nome}: {nomes or 'ninguém'}"
+
+    def vigiar_banheiro(self, cid: str, nome: str, frame, dets):
+        """Câmera do banheiro: com o tapete livre (sem bicho nem gente), vê se tem xixi ou coco novo e registra quem foi."""
+        if dets:  # alguém em cima do tapete: a mudança é o próprio corpo, não vale
+            return
+        r = self.banheiro.classificar(cid, frame)
+        if r is None:
+            return
+        rot, _ = r
+        antes = self.estado_banheiro.get(cid)
+        if rot == "desconhecido" or rot == antes:
+            return
+        self.estado_banheiro[cid] = rot
+        if antes is None or rot == "limpo":  # primeira leitura depois de ligar: só anota o estado
+            return
+        pet = None
+        for pid, ref in self.ultimo.items():  # quem estava por ali nos últimos 15 minutos
+            if ref.get("camera") == cid and time.time() - ref["ts"] < 900:
+                pet = next((x for x in self.pets if x["id"] == pid), None)
+        foto = f"avistamentos/{datetime.now():%Y/%m/%d}/banheiro-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
+        self.db.enviar_foto(foto, _jpeg(self.proteger(frame), self.cfg["largura_foto"]))
+        self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+        print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''}", flush=True)
+        if self.notificador and self.notificador.ativo:  # sempre avisa: xixi/cocô novo no banheiro
+            algo = "xixi" if rot == "xixi" else "cocô"
+            titulo = f"{pet['nome']} fez {algo}" if pet else f"As cachorras fizeram {algo}"
+            try:
+                self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"banheiro-{int(time.time())}")
+            except Exception as e:
+                print(f"  aviso: {e}", flush=True)
+
+    def ensinar_banheiro(self, camera_id: str, rotulo: str) -> str:
+        """Pedido do app ("coco no Banheiro"): a foto de agora vira exemplo de limpo/xixi/coco."""
+        alvo = next(((c, reg) for c, reg in self.cameras if reg["id"] == camera_id), None)
+        if not alvo:
+            return "câmera não encontrada"
+        cfg_cam, reg = alvo
+        frame = capture.capturar(cfg_cam)
+        self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame), lambda f: _jpeg(f, self.cfg["largura_foto"]))
+        self.estado_banheiro[camera_id] = rotulo  # o que já está lá não conta como evento novo
+        c = self.banheiro.cache.get(camera_id) or {}
+        n = {r: sum(1 for x, _ in c.get("exemplos", []) if x == r) for r in ("limpo", "xixi", "coco")}
+        falta = " Falta ensinar 'limpo' (tapete limpo) para eu poder comparar." if c.get("base") is None else ""
+        return f"Aprendi '{rotulo}' em {reg['nome']}. Exemplos: {n['limpo']} limpo, {n['xixi']} xixi, {n['coco']} coco.{falta}"
 
     def identificar(self, pet_id: str, camera_id: str) -> str:
         """Pedido por texto no site ("Mavi na Sala"): tira a foto de agora, marca o pet no animal achado e aprende com ela."""
