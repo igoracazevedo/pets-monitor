@@ -6,6 +6,7 @@ largura_foto: 960            # redimensiona as fotos guardadas
 
 # Achar pessoas nas câmeras (só detecta; não reconhece quem é). false desliga.
 detectar_pessoas: true
+compactar_fotos: true    # faxina automática das fotos antigas (desfoca pessoas e compacta), aos poucos
 proteger_pessoas: true   # corpo das pessoas desfocado nas imagens enviadas; só o rosto fica nítido
 
 deteccao:

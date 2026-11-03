@@ -46,6 +46,7 @@ def carregar(caminho: str | None = None) -> dict:
         cfg["credencial_intelbras"] = {"usuario": intel[0]["usuario"], "senha": intel[0]["senha"]}
         cfg["cameras"] = [c for c in cfg["cameras"] if c.get("fonte") != "intelbras"]
     cfg.setdefault("reconhecer_pessoas", True)  # reconhecer o rosto de quem foi cadastrado no site (só roda se houver alguém cadastrado)
+    cfg.setdefault("compactar_fotos", True)  # faxina automática: protege e compacta fotos antigas do banco aos poucos
     cfg.setdefault("proteger_pessoas", True)  # corpo das pessoas desfocado nas imagens guardadas; só o rosto fica nítido
     cfg.setdefault("detectar_pessoas", True)  # achar pessoas nas câmeras (sem identificar quem é)
     cfg.setdefault("intervalo_s", 300)  # varredura a cada 5 min (ou na hora, em "Onde estão agora?")

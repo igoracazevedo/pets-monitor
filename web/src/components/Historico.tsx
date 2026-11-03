@@ -4,19 +4,33 @@ import { useDados } from '../lib/dados'
 import { useVisualizador, type Caixa, type ItemFoto } from './Visualizador'
 import { dataHora, haQuanto } from '../lib/util'
 
+const CINCO_MIN = 5 * 60 * 1000
+/** Mostra uma foto por câmera + quem (pet/pessoa) a cada 5 minutos: o resto é a mesma cena repetida. */
+function semRepetidas(l: Avistamento[]): Avistamento[] {
+  const ultimo = new Map<string, number>()
+  return l.filter((a) => {
+    const k = `${a.camera_id}|${a.pet_id ?? a.pessoa_id ?? a.especie ?? ''}`
+    const t = new Date(a.visto_em).getTime()
+    const u = ultimo.get(k)
+    if (u !== undefined && u - t < CINCO_MIN) return false
+    ultimo.set(k, t)
+    return true
+  })
+}
+
 type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string> }
 
 export default function Historico({ admin }: { admin: boolean }) {
   const [pet, setPet] = useState('todos')
   const { dados, erro, carregando, recarregar } = useDados<Dados>(
     async () => {
-      let q = supabase.from('pm_avistamentos').select('*').order('visto_em', { ascending: false }).limit(80)
+      let q = supabase.from('pm_avistamentos').select('*').order('visto_em', { ascending: false }).limit(300)
       if (pet === 'pessoas') q = q.eq('especie', 'pessoa')
       else if (pet === 'desconhecido') q = q.is('pet_id', null).neq('especie', 'pessoa')
       else if (pet !== 'todos') q = q.eq('pet_id', pet)
       const [pets, cams, lista, gente] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome')])
       if (lista.error) throw new Error(lista.error.message)
-      const l = (lista.data ?? []) as Avistamento[]
+      const l = semRepetidas((lista.data ?? []) as Avistamento[]).slice(0, 60)
       return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)), gente: Object.fromEntries(((gente.data ?? []) as { id: string; nome: string }[]).map((g) => [g.id, g.nome])) }
     },
     { pets: [], cams: [], lista: [], fotos: {}, gente: {} },
@@ -116,54 +130,51 @@ export default function Historico({ admin }: { admin: boolean }) {
       ) : dados.lista.length === 0 ? (
         <p className="vidro p-6 text-center text-slate-500">Nenhum avistamento ainda.</p>
       ) : (
-        <ul className="vidro divide-y divide-slate-200/70 overflow-hidden">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {dados.lista.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 p-3">
+            <li key={a.id} className="vidro overflow-hidden">
               {a.snapshot_path && dados.fotos[a.snapshot_path] ? (
-                <button type="button" className="shrink-0" onClick={() => verFoto(a)} aria-label="Ver foto">
-                  <img src={dados.fotos[a.snapshot_path]} alt="" className="h-14 w-24 rounded-xl object-cover" loading="lazy" />
+                <button type="button" className="block w-full" onClick={() => verFoto(a)} aria-label="Ver foto">
+                  <img src={dados.fotos[a.snapshot_path]} alt="" className="aspect-video w-full object-cover" loading="lazy" />
                 </button>
               ) : (
-                <span className="h-14 w-24 shrink-0 rounded-xl bg-slate-100" />
+                <div className="aspect-video w-full bg-slate-100" />
               )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id, a.especie, a.pessoa_id)}</p>
-                <p className="truncate text-[12px] text-slate-500">
+              <div className="space-y-2 p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id, a.especie, a.pessoa_id)}</p>
+                  {a.confianca != null && <span className="shrink-0 text-[11px] text-slate-400">{Math.round(a.confianca * 100)}%</span>}
+                </div>
+                <p className="text-[12px] text-slate-500">
                   {nomeCam(a.camera_id)} · {dataHora(a.visto_em)} · {haQuanto(a.visto_em)}
                 </p>
-              </div>
-              {admin && (
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <select
-                    aria-label="Quem foi encontrado"
-                    className="max-w-[110px] !px-2 !py-1 text-[11px]"
-                    value=""
-                    onChange={(e) => void corrigir(a, e.target.value)}
-                  >
-                    <option value="">Quem é?</option>
-                    <optgroup label="Pets">
-                      {dados.pets.map((p) => (
-                        <option key={p.id} value={`pet:${p.id}`}>
-                          {p.nome}
-                        </option>
-                      ))}
-                    </optgroup>
-                    {Object.keys(dados.gente).length > 0 && (
-                      <optgroup label="Pessoas">
-                        {Object.entries(dados.gente).map(([id, nome]) => (
-                          <option key={id} value={`pessoa:${id}`}>
-                            {nome}
+                {admin && (
+                  <div className="flex items-center gap-2">
+                    <select aria-label="Quem foi encontrado" className="min-w-0 flex-1 !px-2 !py-1.5 text-[13px]" value="" onChange={(e) => void corrigir(a, e.target.value)}>
+                      <option value="">Quem é?</option>
+                      <optgroup label="Pets">
+                        {dados.pets.map((p) => (
+                          <option key={p.id} value={`pet:${p.id}`}>
+                            {p.nome}
                           </option>
                         ))}
                       </optgroup>
-                    )}
-                  </select>
-                  <button className="text-[11px] font-semibold text-rose-600" onClick={() => void naoEPet(a)}>
-                    {a.especie === 'pessoa' ? 'Não é pessoa' : 'Não é pet'}
-                  </button>
-                </div>
-              )}
-              {a.confianca != null && <span className="shrink-0 text-[11px] text-slate-400">{Math.round(a.confianca * 100)}%</span>}
+                      {Object.keys(dados.gente).length > 0 && (
+                        <optgroup label="Pessoas">
+                          {Object.entries(dados.gente).map(([id, nome]) => (
+                            <option key={id} value={`pessoa:${id}`}>
+                              {nome}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <button className="shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-rose-600 ring-1 ring-rose-200" onClick={() => void naoEPet(a)}>
+                      {a.especie === 'pessoa' ? 'Não é pessoa' : 'Não é pet'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </li>
           ))}
         </ul>

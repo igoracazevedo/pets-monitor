@@ -387,6 +387,20 @@ def cmd_sincronizar(args):
     print("Nada novo no site." if n == 0 else f"{n} pet(s) atualizado(s).")
 
 
+def cmd_manutencao(args):
+    """Protege (pessoas desfocadas) e compacta TODAS as fotos já guardadas no Supabase. Pode demorar; dá para interromper e continuar."""
+    from . import manutencao
+    from .varredura import Varredura
+
+    cfg = config.carregar(args.config)
+    db = Supabase()
+    v = Varredura(cfg, db, _detector(cfg))
+    fila = manutencao.pendentes(db)
+    print(f"{len(fila)} foto(s) para tratar.")
+    n, falta = manutencao.rodar(v, lista=fila)
+    print(f"Pronto: {n} tratada(s), {falta} com erro/pendente.")
+
+
 def cmd_varrer(args):
     from .varredura import Varredura
 
@@ -406,6 +420,8 @@ def cmd_varrer(args):
     print(f"Varrendo {len(v.cameras)} câmera(s) a cada {cfg['intervalo_s']} s. Ctrl+C para parar.")
     ultimo_sync = 0.0
     ultima_varredura = 0.0
+    ultima_lista = 0.0
+    fila_manut: list[str] = []
     while True:
         ini = time.time()
         try:
@@ -441,6 +457,14 @@ def cmd_varrer(args):
                 ultima_varredura = ini
                 for linha in v.todas():
                     print(time.strftime("%H:%M:%S"), linha, flush=True)
+            if not pedidos and cfg.get("compactar_fotos", True):  # faxina em segundo plano: poucas fotos por vez, sem atrapalhar a varredura
+                from . import manutencao
+
+                if not fila_manut and ini - ultima_lista > 6 * 3600:
+                    ultima_lista = ini
+                    fila_manut = manutencao.pendentes(db)
+                if fila_manut:
+                    manutencao.rodar(v, limite=5, lista=fila_manut, mostrar=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
         except Exception as e:  # nunca morre por um erro isolado
             print("Erro na varredura:", e, flush=True)
         time.sleep(2)
@@ -474,6 +498,8 @@ def main():
     e = sub.add_parser("ensinar", help="gera o perfil de cor de cada pet a partir de fotos")
     e.add_argument("--pasta", default="fotos")
     e.set_defaults(fn=cmd_ensinar)
+    mt = sub.add_parser("manutencao", help="desfoca pessoas e compacta as fotos já guardadas no banco")
+    mt.set_defaults(fn=cmd_manutencao)
     sy = sub.add_parser("sincronizar", help="aprende com as fotos enviadas pelo site")
     sy.add_argument("--todos", action="store_true", help="refaz o perfil de todos os pets, mesmo sem fotos novas")
     sy.set_defaults(fn=cmd_sincronizar)
