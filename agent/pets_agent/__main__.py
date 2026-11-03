@@ -196,33 +196,20 @@ def cmd_verificar(args):
 
 
 def cmd_ensinar(args):
-    """Lê fotos em fotos/<nome do pet>/*.jpg, calcula a cor de cada um e guarda o perfil no Supabase."""
+    """Pasta fotos/<nome do pet>/: cria o pet se não existe e refaz o perfil juntando essas fotos com as enviadas pelo site."""
     cfg = config.carregar(args.config)
     db = Supabase()
-    detector = _detector(cfg)
-    existentes = {p["nome"].lower(): p for p in db.pets()}
     raiz = Path(args.pasta)
     pastas = [p for p in sorted(raiz.iterdir()) if p.is_dir()] if raiz.exists() else []
     if not pastas:
         raise SystemExit(f"Crie a pasta {raiz}/<nome do pet>/ e coloque 5 a 15 fotos de cada um (de preferência sozinho na foto).")
+    existentes = {p["nome"].lower() for p in db.pets()}
     for pasta in pastas:
-        feats = []
-        for foto in sorted(list(pasta.glob("*.jpg")) + list(pasta.glob("*.jpeg")) + list(pasta.glob("*.png"))):
-            img = cv2.imread(str(foto))
-            if img is None:
-                continue
-            dets = detector.detectar(img)
-            if dets:
-                feats.append(caracteristica(img, dets[0].caixa))
-            else:
-                h, w = img.shape[:2]
-                feats.append(caracteristica(img, (0, 0, w, h)))  # foto de perto sem detecção: usa a foto toda
-        if not feats:
-            print(f"{pasta.name}: nenhuma foto utilizável")
-            continue
-        pet = existentes.get(pasta.name.lower()) or db.criar_pet(pasta.name)
-        db.salvar_perfil(pet["id"], criar_perfil(feats))
-        print(f"{pasta.name}: perfil salvo com {len(feats)} foto(s)")
+        if pasta.name.lower() not in existentes:
+            db.criar_pet(pasta.name)
+            print(f"{pasta.name}: pet criado")
+    if not aprender_do_site(db, _detector(cfg), str(raiz), todos=True):
+        print("Nenhum pet para atualizar.")
 
 
 def _caixa_do_pet(dets, porte):
@@ -233,19 +220,26 @@ def _caixa_do_pet(dets, porte):
     return (max(dets, key=area) if porte == "grande" else min(dets, key=area)).caixa
 
 
-def aprender_do_site(db, detector) -> int:
-    """Refaz o perfil dos pets cujas fotos foram alteradas no site. Retorna quantos pets foram atualizados."""
+def aprender_do_site(db, detector, pasta_local: str = "fotos", todos: bool = False) -> int:
+    """Refaz o perfil dos pets cujas fotos mudaram no site (ou todos, com todos=True).
+    Junta as fotos do site com as da pasta local fotos/<nome do pet>/, para uma fonte não apagar a outra."""
     import numpy as np
 
+    pets = db.pets() if todos else db.pets_para_reaprender()
     feitos = 0
-    for pet in db.pets_para_reaprender():
-        feats = []
+    for pet in pets:
+        imagens = []
         for f in db.fotos_do_pet(pet["id"]):
             try:
-                img = cv2.imdecode(np.frombuffer(db.baixar_foto_pet(f["path"]), np.uint8), cv2.IMREAD_COLOR)
+                imagens.append(cv2.imdecode(np.frombuffer(db.baixar_foto_pet(f["path"]), np.uint8), cv2.IMREAD_COLOR))
             except Exception as e:
-                print(f"  {pet['nome']}: foto ignorada ({e})")
-                continue
+                print(f"  {pet['nome']}: foto do site ignorada ({e})")
+        pasta = next((p for p in Path(pasta_local).glob("*") if p.is_dir() and p.name.lower() == pet["nome"].lower()), None) if Path(pasta_local).exists() else None
+        if pasta:
+            for foto in sorted([*pasta.glob("*.jpg"), *pasta.glob("*.jpeg"), *pasta.glob("*.png")]):
+                imagens.append(cv2.imread(str(foto)))
+        feats = []
+        for img in imagens:
             if img is None:
                 continue
             dets = detector.detectar(img)
@@ -255,14 +249,14 @@ def aprender_do_site(db, detector) -> int:
                 h, w = img.shape[:2]
                 feats.append(caracteristica(img, (0, 0, w, h)))
         db.salvar_perfil(pet["id"], criar_perfil(feats) if feats else None)
-        print(f"{pet['nome']}: perfil atualizado com {len(feats)} foto(s) do site")
+        print(f"{pet['nome']}: perfil atualizado com {len(feats)} foto(s) (site + pasta fotos)")
         feitos += 1
     return feitos
 
 
 def cmd_sincronizar(args):
     cfg = config.carregar(args.config)
-    n = aprender_do_site(Supabase(), _detector(cfg))
+    n = aprender_do_site(Supabase(), _detector(cfg), todos=getattr(args, "todos", False))
     print("Nada novo no site." if n == 0 else f"{n} pet(s) atualizado(s).")
 
 
@@ -336,6 +330,7 @@ def main():
     e.add_argument("--pasta", default="fotos")
     e.set_defaults(fn=cmd_ensinar)
     sy = sub.add_parser("sincronizar", help="aprende com as fotos enviadas pelo site")
+    sy.add_argument("--todos", action="store_true", help="refaz o perfil de todos os pets, mesmo sem fotos novas")
     sy.set_defaults(fn=cmd_sincronizar)
     r = sub.add_parser("varrer", help="varre as câmeras (contínuo, ou --uma-vez)")
     r.add_argument("--uma-vez", action="store_true")
