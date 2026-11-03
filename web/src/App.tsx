@@ -7,6 +7,7 @@ import Historico from './components/Historico'
 import Cameras from './components/Cameras'
 import Ajustes from './components/Ajustes'
 import Pets from './components/Pets'
+import { Carregando, Entrar, SemAcesso } from './components/Entrada'
 
 const abas = [
   { id: 'inicio', nome: 'Início', Icone: PawPrint },
@@ -33,33 +34,10 @@ export default function App() {
     void Promise.all([supabase.rpc('pm_is_membro'), supabase.rpc('pm_is_admin')]).then(([m, a]) => setAcesso({ membro: m.data === true, admin: a.data === true }))
   }, [sessao])
 
-  if (sessao === undefined) return <p className="p-10 text-center text-slate-500">Carregando…</p>
-
-  if (!sessao)
-    return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-5 p-6 text-center">
-        <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-cyan-700 text-white">
-          <PawPrint size={38} />
-        </span>
-        <h1 className="text-2xl font-extrabold text-slate-900">Pets Monitor</h1>
-        <p className="text-sm text-slate-600">Onde estão seus pets, segundo as câmeras de casa.</p>
-        <button className="pilula w-full justify-center" onClick={() => void supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}>
-          Entrar com Google
-        </button>
-      </main>
-    )
-
-  if (!acesso) return <p className="p-10 text-center text-slate-500">Verificando acesso…</p>
-
-  if (!acesso.membro)
-    return (
-      <main className="mx-auto max-w-sm space-y-4 p-8 text-center">
-        <p className="text-slate-700">O e-mail {sessao.user.email} não tem acesso. Peça ao administrador para liberar.</p>
-        <button className="pilula" onClick={() => void supabase.auth.signOut()}>
-          Sair
-        </button>
-      </main>
-    )
+  if (sessao === undefined) return <Carregando />
+  if (!sessao) return <Entrar />
+  if (!acesso) return <Carregando texto="Verificando acesso…" />
+  if (!acesso.membro) return <SemAcesso email={sessao.user.email} />
 
   return (
     <div className="mx-auto min-h-screen max-w-3xl pb-24">
