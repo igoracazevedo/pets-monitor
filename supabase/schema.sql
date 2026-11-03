@@ -253,4 +253,8 @@ create policy pm_correcoes_admin on public.pm_correcoes for all to authenticated
 -- "Bater foto" de uma câmera só (camera_id vazio = todas as câmeras)
 alter table public.pm_pedidos add column if not exists camera_id uuid references public.pm_cameras(id) on delete cascade;
 
+-- Remover foto do histórico (admin apaga o arquivo do bucket de quadros)
+drop policy if exists pm_snapshots_apagar on storage.objects;
+create policy pm_snapshots_apagar on storage.objects for delete to authenticated using (bucket_id = 'pm-snapshots' and public.pm_is_admin());
+
 notify pgrst, 'reload schema';

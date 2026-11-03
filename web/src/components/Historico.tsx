@@ -48,6 +48,25 @@ export default function Historico({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
+  /** Remove o registro do histórico (e o arquivo da foto, se mais nada usa ela). */
+  async function remover(a: Avistamento) {
+    if (!confirm('Remover esta foto do histórico?')) return
+    try {
+      const del = await supabase.from('pm_avistamentos').delete().eq('id', a.id)
+      if (del.error) throw del.error
+      if (a.snapshot_path && a.snapshot_path.startsWith('avistamentos/')) {
+        const [outros, pos] = await Promise.all([
+          supabase.from('pm_avistamentos').select('id', { count: 'exact', head: true }).eq('snapshot_path', a.snapshot_path),
+          supabase.from('pm_ultima_posicao').select('pet_id', { count: 'exact', head: true }).eq('snapshot_path', a.snapshot_path),
+        ])
+        if (!outros.count && !pos.count) await supabase.storage.from('pm-snapshots').remove([a.snapshot_path])
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : (e as { message?: string })?.message ?? 'Não consegui remover.')
+    }
+    await recarregar()
+  }
+
   /** "Quem é?": corrige o registro, acerta a última posição e manda a imagem para o programa de casa aprender. */
   async function corrigir(a: Avistamento, destino: string) {
     if (!destino) return
@@ -171,6 +190,9 @@ export default function Historico({ admin }: { admin: boolean }) {
                     </select>
                     <button className="shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-rose-600 ring-1 ring-rose-200" onClick={() => void naoEPet(a)}>
                       {a.especie === 'pessoa' ? 'Não é pessoa' : 'Não é pet'}
+                    </button>
+                    <button className="shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-slate-600 ring-1 ring-slate-200" onClick={() => void remover(a)} aria-label="Remover foto">
+                      Remover
                     </button>
                   </div>
                 )}
