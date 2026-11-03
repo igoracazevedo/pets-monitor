@@ -50,6 +50,7 @@ class Varredura:
         self.ultimo: dict[str, dict] = {}
         self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
         self.ultimo_quadro: dict[str, float] = {}
+        self.falhas: dict[str, tuple[int, float]] = {}  # câmera -> (falhas seguidas, só tenta de novo depois de)
 
     def recarregar_pets(self):
         self.pets = self.db.pets()
@@ -58,9 +59,14 @@ class Varredura:
 
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
         nome = cfg_cam["nome"]
+        n_falhas, ate = self.falhas.get(nome, (0, 0.0))
+        if n_falhas and time.time() < ate:  # câmera fora do ar: não segura as outras a cada volta
+            return f"{nome}: sem sinal (tenta de novo em {int(ate - time.time())} s)"
         try:
             frame = capture.capturar(cfg_cam)
+            self.falhas.pop(nome, None)
         except Exception as e:  # câmera fora do ar não derruba as outras
+            self.falhas[nome] = (n_falhas + 1, time.time() + min(300, 20 * 2**n_falhas))
             self.db.status_camera(reg["id"], False, str(e))
             return f"{nome}: ERRO {e}"
 
