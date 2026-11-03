@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
+import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto } from '../lib/util'
 
 type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string> }
@@ -58,9 +59,18 @@ export default function Historico({ admin }: { admin: boolean }) {
 
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
   const nomePet = (id: string | null, esp?: string | null, pessoa?: string | null) => (esp === 'pessoa' ? (pessoa ? (dados.gente[pessoa] ?? 'Pessoa') : 'Pessoa') : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
+  const { abrir, janela } = useVisualizador()
+  const verFoto = (a: Avistamento) => {
+    const com = dados.lista.filter((x) => x.snapshot_path && dados.fotos[x.snapshot_path])
+    abrir(
+      com.map((x) => ({ id: String(x.id), url: dados.fotos[x.snapshot_path!], titulo: nomePet(x.pet_id, x.especie, x.pessoa_id), legenda: `${nomeCam(x.camera_id)} · ${dataHora(x.visto_em)}` })),
+      Math.max(0, com.findIndex((x) => x.id === a.id)),
+    )
+  }
 
   return (
     <div className="space-y-3">
+      {janela}
       <select value={pet} onChange={(e) => setPet(e.target.value)} className="w-full sm:w-auto">
         <option value="todos">Todos</option>
         {dados.pets.map((p) => (
@@ -82,7 +92,9 @@ export default function Historico({ admin }: { admin: boolean }) {
           {dados.lista.map((a) => (
             <li key={a.id} className="flex items-center gap-3 p-3">
               {a.snapshot_path && dados.fotos[a.snapshot_path] ? (
-                <img src={dados.fotos[a.snapshot_path]} alt="" className="h-14 w-24 shrink-0 rounded-xl object-cover" loading="lazy" />
+                <button type="button" className="shrink-0" onClick={() => verFoto(a)} aria-label="Ver foto">
+                  <img src={dados.fotos[a.snapshot_path]} alt="" className="h-14 w-24 rounded-xl object-cover" loading="lazy" />
+                </button>
               ) : (
                 <span className="h-14 w-24 shrink-0 rounded-xl bg-slate-100" />
               )}

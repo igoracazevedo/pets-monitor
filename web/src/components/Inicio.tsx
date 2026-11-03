@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Cat, Dog, RefreshCw, Users } from 'lucide-react'
 import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao, type Presenca } from '../lib/supabase'
 import { useDados } from '../lib/dados'
+import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
 type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[] }
@@ -35,6 +36,7 @@ async function carregar(): Promise<Dados> {
 
 export default function Inicio({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
+  const { abrir, janela } = useVisualizador()
   const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [] })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
@@ -50,7 +52,11 @@ export default function Inicio({ admin }: { admin: boolean }) {
         <ul className="space-y-2">
           {pessoasAgora.map((g) => (
             <li key={g.camera_id} className="flex items-center gap-3">
-              {g.snapshot_path && dados.fotos[g.snapshot_path] && <img src={dados.fotos[g.snapshot_path]} alt="" className="h-12 w-20 shrink-0 rounded-xl object-cover" />}
+              {g.snapshot_path && dados.fotos[g.snapshot_path] && (
+                <button type="button" className="shrink-0" onClick={() => abrir([{ id: g.camera_id, url: dados.fotos[g.snapshot_path!], titulo: g.quem || 'Pessoa', legenda: `${nomeCam(g.camera_id)} · ${g.foto_em ? dataHora(g.foto_em) : ''}` }])} aria-label="Ver foto">
+                  <img src={dados.fotos[g.snapshot_path]} alt="" className="h-12 w-20 rounded-xl object-cover" />
+                </button>
+              )}
               <p className="min-w-0 text-sm text-slate-700">
                 <strong className="text-slate-900">{nomeCam(g.camera_id)}</strong> · {g.quem ? g.quem : `${g.pessoas} ${g.pessoas === 1 ? 'pessoa' : 'pessoas'}`} agora
               </p>
@@ -101,6 +107,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
   const cam = (id: string | null) => dados.cams.find((c) => c.id === id)
   return (
     <div className="space-y-4">
+      {janela}
       <button className="pilula" disabled={buscando} onClick={() => void localizar()}>
         <RefreshCw size={16} className={buscando ? 'animate-spin' : ''} /> {buscando ? 'Procurando nas câmeras…' : 'Onde estão agora?'}
       </button>
@@ -138,7 +145,9 @@ export default function Inicio({ admin }: { admin: boolean }) {
                 )}
               </div>
               {pos?.snapshot_path && dados.fotos[pos.snapshot_path] && (
-                <img src={dados.fotos[pos.snapshot_path]} alt={`${pet.nome} na última posição`} className="aspect-video w-full object-cover" />
+                <button type="button" className="block w-full" onClick={() => abrir([{ id: pet.id, url: dados.fotos[pos.snapshot_path!], titulo: pet.nome, legenda: `${c?.nome ?? 'Câmera'} · foto de ${dataHora(pos.foto_em ?? pos.visto_em)}` }])} aria-label={`Ver foto de ${pet.nome}`}>
+                  <img src={dados.fotos[pos.snapshot_path]} alt={`${pet.nome} na última posição`} className="aspect-video w-full object-cover" />
+                </button>
               )}
               {pos && (
                 <div className="flex items-center justify-between gap-2 px-4 py-2 text-[11px] text-slate-500">

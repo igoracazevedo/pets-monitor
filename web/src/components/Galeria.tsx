@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useVisualizador, type ItemFoto } from './Visualizador'
 import { Camera, ChevronDown, ImagePlus, X } from 'lucide-react'
 
 export type Miniatura = { id: string; url?: string; legenda?: string }
@@ -22,8 +23,15 @@ export function Galeria({
   dica: string
 }) {
   const [aberta, setAberta] = useState(false)
+  const { abrir, janela } = useVisualizador()
+  const todas: ItemFoto[] = [
+    ...enviadas.filter((f) => f.url).map((f) => ({ id: 'e' + f.id, url: f.url!, titulo: 'Enviada por você' })),
+    ...encontradas.filter((f) => f.url).map((f) => ({ id: 'c' + f.id, url: f.url!, titulo: 'Encontrada nas câmeras', legenda: f.legenda })),
+  ]
+  const abrirFoto = (id: string) => abrir(todas, Math.max(0, todas.findIndex((t) => t.id === id)))
   return (
     <div className="space-y-2">
+      {janela}
       <button type="button" onClick={() => setAberta((a) => !a)} className="flex w-full items-center justify-between rounded-xl bg-white/50 px-3 py-2 text-left text-[12px] font-semibold text-slate-700">
         <span>
           Fotos · {enviadas.length} enviada(s) · {encontradas.length} encontrada(s)
@@ -38,9 +46,9 @@ export function Galeria({
               {enviadas.map((f) => (
                 <div key={f.id} className="relative h-14 w-14 overflow-hidden rounded-lg bg-slate-100">
                   {f.url && (
-                    <a href={f.url} target="_blank" rel="noreferrer">
+                    <button type="button" className="h-full w-full" onClick={() => abrirFoto('e' + f.id)} aria-label="Ver foto">
                       <img src={f.url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    </a>
+                    </button>
                   )}
                   {admin && (
                     <button aria-label="Apagar foto" className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white" onClick={() => onApagar(f.id)}>
@@ -79,9 +87,9 @@ export function Galeria({
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {encontradas.map((f) => (
-                  <a key={f.id} href={f.url} target="_blank" rel="noreferrer" className="relative block h-14 w-[84px] overflow-hidden rounded-lg bg-slate-100" title={f.legenda}>
+                  <button key={f.id} type="button" onClick={() => abrirFoto('c' + f.id)} className="relative block h-14 w-[84px] overflow-hidden rounded-lg bg-slate-100" title={f.legenda} aria-label="Ver foto">
                     {f.url && <img src={f.url} alt={f.legenda ?? ''} className="h-full w-full object-cover" loading="lazy" />}
-                  </a>
+                  </button>
                 ))}
               </div>
             )}

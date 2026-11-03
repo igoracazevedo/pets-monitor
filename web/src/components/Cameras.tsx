@@ -3,6 +3,7 @@ import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto, minutosDesde } from '../lib/util'
+import { Visualizador, type ItemFoto } from './Visualizador'
 
 const horaCompleta = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
@@ -12,6 +13,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   const [msg, setMsg] = useState('')
   const [buscando, setBuscando] = useState(false)
   const [batendo, setBatendo] = useState<string | null>(null)
+  const [ver, setVer] = useState<number | null>(null)
   const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string> }>(
     async () => {
       const { data, error } = await supabase.from('pm_cameras').select('*').order('ordem').order('nome')
@@ -60,9 +62,26 @@ export default function Cameras({ admin }: { admin: boolean }) {
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
   const visiveis = dados.cams.filter((c) => c.ativo)
   const ocultas = dados.cams.length - visiveis.length
+  const urlDe = (c: Camera) => {
+    const base = c.ultimo_quadro_path ? dados.fotos[c.ultimo_quadro_path] : undefined
+    return base ? `${base}${base.includes('?') ? '&' : '?'}t=${c.foto_em ? Date.parse(c.foto_em) : 0}` : undefined
+  }
+  const itens: ItemFoto[] = visiveis.flatMap((c) => {
+    const url = urlDe(c)
+    return url ? [{ id: c.id, url, titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
+  })
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
     <div className="space-y-3">
+      {ver != null && itens[ver] && (
+        <Visualizador
+          itens={itens}
+          indice={ver}
+          onIndice={setVer}
+          onFechar={() => setVer(null)}
+          acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
+        />
+      )}
       <button className="pilula" disabled={buscando} onClick={() => void pedirFotos()}>
         <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
       </button>
@@ -74,14 +93,13 @@ export default function Cameras({ admin }: { admin: boolean }) {
       <div className="grid gap-4 sm:grid-cols-2">
         {visiveis.map((c) => {
           const fora = c.ultimo_status === 'erro' || minutosDesde(c.ultima_leitura) > 5
-          const base = c.ultimo_quadro_path ? dados.fotos[c.ultimo_quadro_path] : undefined
-          const img = base ? `${base}${base.includes('?') ? '&' : '?'}t=${c.foto_em ? Date.parse(c.foto_em) : 0}` : undefined
+          const img = urlDe(c)
           return (
             <article key={c.id} className={`vidro overflow-hidden ${c.ativo ? '' : 'opacity-60'}`}>
               {img ? (
-                <a href={img} target="_blank" rel="noreferrer">
+                <button type="button" className="block w-full" onClick={() => setVer(Math.max(0, itens.findIndex((x) => x.id === c.id)))} aria-label={`Abrir a foto de ${c.nome}`}>
                   <img src={img} alt={c.nome} className="aspect-video w-full object-cover" />
-                </a>
+                </button>
               ) : <div className="flex aspect-video items-center justify-center bg-slate-100 text-slate-400">sem imagem</div>}
               <div className="flex items-center justify-between gap-2 p-3">
                 <div className="min-w-0 flex-1">
@@ -106,15 +124,15 @@ export default function Cameras({ admin }: { admin: boolean }) {
                   </p>
                   {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
                 </div>
-                <button
-                  className="pilula shrink-0 !px-3 !py-1.5 text-[12px]"
-                  disabled={batendo === c.id || buscando}
-                  onClick={() => void pedirFotos(c.id)}
-                  aria-label={`Bater foto de ${c.nome}`}
-                >
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
+              </div>
+              <div className="flex gap-2 px-3 pb-3">
+                <button className="pilula flex-1 justify-center !py-2 text-[13px]" disabled={!img} onClick={() => setVer(Math.max(0, itens.findIndex((x) => x.id === c.id)))}>
+                  Abrir câmera
+                </button>
+                <button className="pilula flex-1 justify-center !py-2 text-[13px]" disabled={batendo === c.id || buscando} onClick={() => void pedirFotos(c.id)} aria-label={`Bater foto de ${c.nome}`}>
                   <CamIcon size={14} className={batendo === c.id ? 'animate-pulse' : ''} /> {batendo === c.id ? 'Batendo…' : 'Bater foto'}
                 </button>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
               </div>
             </article>
           )
