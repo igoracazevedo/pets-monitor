@@ -38,6 +38,7 @@ export default function Pets({ admin }: { admin: boolean }) {
   const [enviando, setEnviando] = useState<string | null>(null)
   const alvo = useRef<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const inputCamera = useRef<HTMLInputElement>(null)
   const inputPerfil = useRef<HTMLInputElement>(null)
   const alvoPerfil = useRef<Pet | null>(null)
 
@@ -129,6 +130,7 @@ export default function Pets({ admin }: { admin: boolean }) {
     <div className="space-y-4">
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
       <input ref={inputPerfil} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => { const a = e.target.files?.[0]; const p = alvoPerfil.current; e.target.value = ''; if (a && p) void trocarPerfil(p, a) }} />
+      <input ref={inputCamera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
       <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => e.target.files?.length && alvo.current && void enviar(alvo.current, e.target.files).then(() => input.current && (input.current.value = ''))} />
 
       {dados.pets.map((p) => {
@@ -192,7 +194,7 @@ export default function Pets({ admin }: { admin: boolean }) {
               admin={admin}
               enviando={enviando === p.id}
               onApagar={(id) => { const f = fotos.find((x) => x.id === id); if (f) void apagarFoto(f) }}
-              onAdicionar={() => { alvo.current = p.id; input.current?.click() }}
+              onAdicionar={(modo) => { alvo.current = p.id; (modo === 'camera' ? inputCamera : input).current?.click() }}
               dica="Melhor com o pet sozinho na foto, de dia e à noite. Prints das câmeras funcionam muito bem."
             />
           </section>

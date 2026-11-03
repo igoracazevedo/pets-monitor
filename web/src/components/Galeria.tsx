@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Camera, ChevronDown, X } from 'lucide-react'
+import { Camera, ChevronDown, ImagePlus, X } from 'lucide-react'
 
 export type Miniatura = { id: string; url?: string; legenda?: string }
 
@@ -18,7 +18,7 @@ export function Galeria({
   admin: boolean
   enviando: boolean
   onApagar: (id: string) => void
-  onAdicionar: () => void
+  onAdicionar: (modo: 'camera' | 'galeria') => void
   dica: string
 }) {
   const [aberta, setAberta] = useState(false)
@@ -50,14 +50,24 @@ export function Galeria({
                 </div>
               ))}
               {admin && (
-                <button
-                  className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-cyan-700/40 text-[9px] font-semibold leading-tight text-cyan-800 disabled:opacity-50"
-                  disabled={enviando}
-                  onClick={onAdicionar}
-                >
-                  <Camera size={16} />
-                  {enviando ? 'Enviando' : 'Adicionar'}
-                </button>
+                <>
+                  <button
+                    className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-cyan-700/40 text-[9px] font-semibold leading-tight text-cyan-800 disabled:opacity-50"
+                    disabled={enviando}
+                    onClick={() => onAdicionar('camera')}
+                  >
+                    <Camera size={16} />
+                    {enviando ? 'Enviando' : 'Tirar foto'}
+                  </button>
+                  <button
+                    className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-cyan-700/40 text-[9px] font-semibold leading-tight text-cyan-800 disabled:opacity-50"
+                    disabled={enviando}
+                    onClick={() => onAdicionar('galeria')}
+                  >
+                    <ImagePlus size={16} />
+                    Galeria
+                  </button>
+                </>
               )}
             </div>
             <p className="mt-1 text-[11px] text-slate-500">{dica}</p>

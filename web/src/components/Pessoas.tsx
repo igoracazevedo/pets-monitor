@@ -33,6 +33,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
   const [enviando, setEnviando] = useState<string | null>(null)
   const alvo = useRef<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const inputCamera = useRef<HTMLInputElement>(null)
   const falha = (e: unknown) => setMsg(e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e))
 
   async function criar(e: React.FormEvent) {
@@ -102,6 +103,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
         </span>
       </p>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
+      <input ref={inputCamera} type="file" accept="image/*" capture="user" hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
       <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = e.target.files; const id = alvo.current; e.target.value = ''; if (f?.length && id) void enviar(id, f) }} />
 
       {dados.pessoas.map((p) => {
@@ -129,7 +131,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
               admin
               enviando={enviando === p.id}
               onApagar={(id) => { const f = fotos.find((x) => x.id === id); if (f) void apagarFoto(f) }}
-              onAdicionar={() => { alvo.current = p.id; input.current?.click() }}
+              onAdicionar={(modo) => { alvo.current = p.id; (modo === 'camera' ? inputCamera : input).current?.click() }}
               dica="Mande 3 a 6 fotos do rosto de frente, bem iluminadas, sem óculos escuros nem boné. Câmeras no teto só reconhecem quando o rosto aparece de frente e grande o bastante."
             />
           </section>
