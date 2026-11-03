@@ -440,6 +440,16 @@ def cmd_varrer(args):
             if v.precisa_redescobrir():
                 print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
             pedidos = db.pedidos_pendentes()
+            for ped in [p for p in pedidos if p.get("tipo") == "identificar"]:
+                try:
+                    msg = v.identificar(ped["pet_id"], ped["camera_id"])
+                    aprender_correcoes(db, v.rostos)
+                    v.recarregar_pets()
+                except Exception as e:
+                    msg = f"erro: {e}"
+                print(time.strftime("%H:%M:%S"), "[identificar]", msg, flush=True)
+                db.resultado_pedido(ped["id"], msg)
+            pedidos = [p for p in pedidos if p.get("tipo") != "identificar"]
             if pedidos:  # "Onde estão agora?" (varredura completa), "Ver ao vivo" (só uma foto de cada câmera) ou teste de aviso
                 tipos = {p.get("tipo", "localizar") for p in pedidos}
                 if "teste" in tipos and v.notificador:

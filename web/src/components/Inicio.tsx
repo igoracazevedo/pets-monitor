@@ -92,6 +92,43 @@ export default function Inicio({ admin }: { admin: boolean }) {
     }
   }
 
+  const [texto, setTexto] = useState('')
+  const [comandando, setComandando] = useState(false)
+  const [resposta, setResposta] = useState('')
+  const sem = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  /** Linha de comando: "Mavi na Sala" -> o programa de casa tira a foto de agora da câmera, marca o pet e aprende com ela. */
+  async function comando() {
+    const t = sem(texto)
+    const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))
+    const camera = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome)))
+    if (!pet || !camera) {
+      setResposta(`Não entendi. Escreva o pet e a câmera, por exemplo: "${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}". ${!pet ? 'Pets: ' + dados.pets.map((p) => p.nome).join(', ') + '. ' : ''}${!camera ? 'Câmeras: ' + dados.cams.map((c) => c.nome).join(', ') + '.' : ''}`)
+      return
+    }
+    setComandando(true)
+    setResposta(`Procurando ${pet.nome} na câmera ${camera.nome}…`)
+    try {
+      const { data, error } = await supabase.from('pm_pedidos').insert({ tipo: 'identificar', pet_id: pet.id, camera_id: camera.id }).select('id').single()
+      if (error || !data) throw error ?? new Error('Não consegui enviar o pedido.')
+      let msg = 'O programa de casa não respondeu. Confira se o iniciar.bat está aberto.'
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const { data: p } = await supabase.from('pm_pedidos').select('atendido_em,resultado').eq('id', data.id).single()
+        if (p?.atendido_em) {
+          msg = p.resultado ?? 'Pronto.'
+          break
+        }
+      }
+      setResposta(msg)
+      setTexto('')
+      await recarregar()
+    } catch (e) {
+      setResposta(e instanceof Error ? e.message : (e as { message?: string })?.message ?? 'Erro ao enviar.')
+    } finally {
+      setComandando(false)
+    }
+  }
+
   async function naoEPet(pos: Posicao) {
     if (!pos.camera_id || pos.x == null || pos.y == null || pos.w == null || pos.h == null) return
     if (!confirm('Isso não é este pet? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.')) return
@@ -111,6 +148,21 @@ export default function Inicio({ admin }: { admin: boolean }) {
       <button className="pilula" disabled={buscando} onClick={() => void localizar()}>
         <RefreshCw size={16} className={buscando ? 'animate-spin' : ''} /> {buscando ? 'Procurando nas câmeras…' : 'Onde estão agora?'}
       </button>
+      <form
+        className="vidro space-y-2 p-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (texto.trim()) void comando()
+        }}
+      >
+        <div className="flex gap-2">
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={`Ex.: ${dados.pets[0]?.nome ?? 'Mavi'} na ${dados.cams[0]?.nome ?? 'Sala'}`} className="min-w-0 flex-1" disabled={comandando} />
+          <button type="submit" className="pilula shrink-0" disabled={comandando || !texto.trim()}>
+            Identificar
+          </button>
+        </div>
+        {resposta && <p className="text-[13px] text-slate-600">{resposta}</p>}
+      </form>
       <div className="grid gap-4 sm:grid-cols-2">
         {dados.pets.map((pet) => {
           const pos = dados.pos.find((p) => p.pet_id === pet.id)

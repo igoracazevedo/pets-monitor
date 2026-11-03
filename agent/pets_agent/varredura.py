@@ -308,6 +308,43 @@ class Varredura:
             nomes = (nomes + ", " if nomes else "") + (", ".join(quem) + (" + " if quem and desconhecidas else "") if quem else "") + (f"{desconhecidas} pessoa(s)" if desconhecidas or not quem else "")
         return f"{nome}: {nomes or 'ninguém'}"
 
+    def identificar(self, pet_id: str, camera_id: str) -> str:
+        """Pedido por texto no site ("Mavi na Sala"): tira a foto de agora, marca o pet no animal achado e aprende com ela."""
+        pet = next((x for x in self.pets if x["id"] == pet_id), None) or self.db.pet_por_id(pet_id)
+        alvo = next(((c, reg) for c, reg in self.cameras if reg["id"] == camera_id), None)
+        if not pet or not alvo:
+            return "pet ou câmera não encontrados"
+        cfg_cam, reg = alvo
+        try:
+            frame = capture.capturar(cfg_cam)
+        except Exception as e:
+            return f"não consegui abrir a câmera {reg['nome']}: {e}"
+        h, w = frame.shape[:2]
+        dets = [d for d in self.detector.detectar(frame) if d.especie != "pessoa"]
+        fortes = [d for d in dets if not d.fraca]
+        dets = fortes or dets
+        if not dets:
+            return f"não achei nenhum animal na foto de agora da câmera {reg['nome']}"
+        area = lambda d: (d.caixa[2] - d.caixa[0]) * (d.caixa[3] - d.caixa[1])
+        if len(dets) > 1 and pet.get("porte") == "grande":
+            d = max(dets, key=area)
+        elif len(dets) > 1 and pet.get("porte") == "pequeno":
+            d = min(dets, key=area)
+        else:
+            d = max(dets, key=lambda x: x.confianca)
+        x1, y1, x2, y2 = d.caixa
+        box = {"x": round(x1 / w, 4), "y": round(y1 / h, 4), "w": round((x2 - x1) / w, 4), "h": round((y2 - y1) / h, 4)}
+        foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{camera_id[:8]}-{datetime.now():%H%M%S}.jpg"
+        self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame), [(d.caixa, pet["nome"])]), self.cfg["largura_foto"]))
+        self.db.avistamento({"camera_id": camera_id, "confianca": 1, **box, "identificacao": "manual", "pet_id": pet_id, "pessoa_id": None, "especie": pet.get("especie") or d.especie, "snapshot_path": foto})
+        agora_s = agora()
+        self.db.ultima_posicao({"camera_id": camera_id, "confianca": 1, **box, "pet_id": pet_id, "visto_em": agora_s, "snapshot_path": foto, "foto_em": agora_s})
+        self.db.correcao({"camera_id": camera_id, "snapshot_path": foto, **box, "pet_id": pet_id})  # vira amostra de aprendizado
+        self.ultimo[pet_id] = {"camera": camera_id, "ts": time.time(), "foto": foto, "foto_em": agora_s, "caixa": d.caixa}
+        self.db.status_camera(camera_id, True)
+        extra = f" (havia {len(dets)} animais; usei o de porte {pet.get('porte') or 'maior confiança'})" if len(dets) > 1 else ""
+        return f"{pet['nome']} marcada(o) em {reg['nome']}{extra}"
+
     def avisar(self, p, camera: str, foto: str | None):
         """Aviso no celular quando um pet/pessoa marcado com 'Avisar' é encontrado num lugar novo (ou quando você pede 'Onde estão agora?')."""
         if not self.notificador or not self.notificador.ativo:

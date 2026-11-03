@@ -253,6 +253,12 @@ create policy pm_correcoes_admin on public.pm_correcoes for all to authenticated
 -- "Bater foto" de uma câmera só (camera_id vazio = todas as câmeras)
 alter table public.pm_pedidos add column if not exists camera_id uuid references public.pm_cameras(id) on delete cascade;
 
+-- "Identificar" por texto: o site pede e o agente marca o pet na foto de agora da câmera
+alter table public.pm_pedidos add column if not exists pet_id uuid references public.pm_pets(id) on delete cascade;
+alter table public.pm_pedidos add column if not exists resultado text;
+alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
+alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste', 'identificar'));
+
 -- Remover foto do histórico (admin apaga o arquivo do bucket de quadros)
 drop policy if exists pm_snapshots_apagar on storage.objects;
 create policy pm_snapshots_apagar on storage.objects for delete to authenticated using (bucket_id = 'pm-snapshots' and public.pm_is_admin());
