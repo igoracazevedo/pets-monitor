@@ -345,7 +345,7 @@ def test_privacidade():
     f = rng.integers(0, 255, (200, 120, 3), dtype=np.uint8)
     out = desfocar_pessoas(f, [(20, 0, 100, 190)], R())
     corpo = (slice(100, 180), slice(30, 90))
-    assert not np.array_equal(out[corpo], f[corpo]) and out[corpo].std() < f[corpo].std()
+    assert not np.array_equal(out[corpo], f[corpo]) and out[corpo].max() == 0
     assert np.array_equal(out[12:28, 58:70], f[12:28, 58:70])  # rosto (40+20 offset) preservado
     assert np.array_equal(out[:, :10], f[:, :10])
     print("privacidade: corpo desfocado, rosto nítido: ok")

@@ -1,18 +1,10 @@
-"""Privacidade: nas imagens GUARDADAS (site, histórico, fotos sob demanda) o corpo das pessoas é desfocado e só o rosto fica nítido.
+"""Privacidade: nas imagens GUARDADAS (site, histórico, fotos sob demanda) o corpo das pessoas é coberto com tarja preta e só o rosto fica nítido.
 O reconhecimento e a detecção usam a imagem original; a protegida é só a que sai do computador de casa."""
-import cv2
 import numpy as np
 
 
-def _pixelar(img: np.ndarray) -> np.ndarray:
-    h, w = img.shape[:2]
-    pequena = cv2.resize(img, (max(3, w // 10), max(3, h // 10)), interpolation=cv2.INTER_AREA)
-    pix = cv2.resize(pequena, (w, h), interpolation=cv2.INTER_NEAREST)
-    return cv2.GaussianBlur(pix, (0, 0), max(2.0, min(w, h) / 25))
-
-
 def desfocar_pessoas(frame: np.ndarray, caixas: list[tuple[int, int, int, int]], rostos=None) -> np.ndarray:
-    """Pixela cada pessoa (caixa x1,y1,x2,y2) e devolve o rosto nítido por cima. Sem rosto visível, a pessoa inteira fica pixelada."""
+    """Cobre cada pessoa com uma tarja preta (caixa x1,y1,x2,y2) e devolve o rosto nítido por cima. Sem rosto visível, a pessoa inteira fica coberta."""
     if not caixas:
         return frame
     saida = frame.copy()
@@ -23,7 +15,7 @@ def desfocar_pessoas(frame: np.ndarray, caixas: list[tuple[int, int, int, int]],
         if x2 - x1 < 4 or y2 - y1 < 4:
             continue
         original = frame[y1:y2, x1:x2]
-        bloco = _pixelar(original)
+        bloco = np.zeros_like(original)  # tarja preta
         if rostos is not None:
             try:
                 faces = rostos.caixas(original)
