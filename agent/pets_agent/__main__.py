@@ -140,6 +140,10 @@ def cmd_sondar(args):
     """Câmera genérica: testa os caminhos RTSP mais comuns e diz qual devolve imagem."""
     from urllib.parse import quote
 
+    if not args.ip:
+        args.ip = input("IP da câmera (ex.: 192.168.18.10): ").strip()
+        args.usuario = input("Usuário da câmera (Enter se não tem): ").strip()
+        args.senha = input("Senha da câmera (Enter se não tem): ").strip()
     cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
     print(f"Testando {len(CAMINHOS_RTSP)} caminhos em {args.ip}:{args.porta} (uns 5 s cada se não existir)...")
     achou = False
@@ -282,7 +286,7 @@ def main():
     t.add_argument("camera")
     t.set_defaults(fn=cmd_testar)
     so = sub.add_parser("sondar", help="câmera genérica: descobre o caminho RTSP que funciona")
-    so.add_argument("ip")
+    so.add_argument("ip", nargs="?", default="")
     so.add_argument("usuario", nargs="?", default="")
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
