@@ -64,7 +64,7 @@ def _snapshot_intelbras(cam: dict) -> np.ndarray:
                     return img
             ultimo = f"HTTP {r.status_code}"
         except requests.RequestException as e:
-            ultimo = str(e)[:80]
+            ultimo = str(e)[:300]
     raise RuntimeError(ultimo or "sem resposta")
 
 

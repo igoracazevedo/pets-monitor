@@ -32,6 +32,39 @@ def cmd_testar(args):
         print("  nenhum cachorro/gato neste quadro")
 
 
+def cmd_diagnosticar(args):
+    """Para cada câmera: o PC alcança? quais portas abrem? o que a foto HTTP responde? (sem usar o detector)"""
+    import socket
+
+    import requests
+    from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+
+    cfg = config.carregar(args.config)
+    cams = [c for c in cfg["cameras"] if not args.camera or c["nome"].lower() == args.camera.lower()]
+    for c in cams:
+        host = c.get("host") or (c.get("url", "").split("@")[-1].split("/")[0].split(":")[0])
+        print(f"\n== {c['nome']} ({host})")
+        for porta in (80, 554, 8080, 8000, 443, 37777):
+            s = socket.socket()
+            s.settimeout(3)
+            try:
+                s.connect((host, porta))
+                print(f"  porta {porta}: ABERTA")
+            except Exception as e:
+                print(f"  porta {porta}: {type(e).__name__} {str(e)[:60]}")
+            finally:
+                s.close()
+        if c.get("fonte") == "intelbras":
+            for nome, auth in (("Digest", HTTPDigestAuth(c["usuario"], c["senha"])), ("Basic", HTTPBasicAuth(c["usuario"], c["senha"]))):
+                try:
+                    r = requests.get(f"http://{host}/cgi-bin/snapshot.cgi", auth=auth, timeout=(5, 10))
+                    print(f"  foto HTTP ({nome}): status {r.status_code}, {len(r.content)} bytes, tipo {r.headers.get('Content-Type')}")
+                    if r.ok:
+                        break
+                except Exception as e:
+                    print(f"  foto HTTP ({nome}): {type(e).__name__}: {str(e)[:250]}")
+
+
 def cmd_ensinar(args):
     """Lê fotos em fotos/<nome do pet>/*.jpg, calcula a cor de cada um e guarda o perfil no Supabase."""
     cfg = config.carregar(args.config)
@@ -150,6 +183,9 @@ def main():
     t = sub.add_parser("testar", help="tira um quadro de uma câmera e mostra o que o detector achou")
     t.add_argument("camera")
     t.set_defaults(fn=cmd_testar)
+    dg = sub.add_parser("diagnosticar", help="testa a rede de cada câmera (portas e foto HTTP)")
+    dg.add_argument("camera", nargs="?")
+    dg.set_defaults(fn=cmd_diagnosticar)
     e = sub.add_parser("ensinar", help="gera o perfil de cor de cada pet a partir de fotos")
     e.add_argument("--pasta", default="fotos")
     e.set_defaults(fn=cmd_ensinar)
