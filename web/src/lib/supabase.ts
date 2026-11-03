@@ -41,18 +41,37 @@ export async function urlsDasFotos(caminhos: (string | null | undefined)[]): Pro
 
 const ehHeic = (a: File) => /hei[cf]/i.test(a.type) || /\.hei[cf]$/i.test(a.name)
 
-/** Abre qualquer foto: HEIC/HEIF (iPhone) é convertido para JPEG no navegador antes de decodificar. */
+/** Decodifica pelo elemento <img> (aceita casos em que createImageBitmap falha, ex.: arquivos grandes ou tipo desconhecido). */
+async function viaImg(blob: Blob): Promise<ImageBitmap> {
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    return await createImageBitmap(img)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/** Abre qualquer foto: tenta o navegador (2 jeitos) e, se falhar, converte como HEIC/HEIF (iPhone/Samsung) para JPEG. */
 async function abrirImagem(arquivo: File): Promise<ImageBitmap> {
   if (!ehHeic(arquivo)) {
-    try {
-      return await createImageBitmap(arquivo)
-    } catch {
-      /* formato que o navegador não lê: tenta como HEIC */
+    for (const abrir of [() => createImageBitmap(arquivo), () => viaImg(arquivo)]) {
+      try {
+        return await abrir()
+      } catch {
+        /* tenta o próximo */
+      }
     }
   }
-  const { heicTo } = await import('heic-to')
-  const jpeg = await heicTo({ blob: arquivo, type: 'image/jpeg', quality: 0.9 })
-  return await createImageBitmap(jpeg)
+  try {
+    const { heicTo } = await import('heic-to')
+    const jpeg = await heicTo({ blob: arquivo, type: 'image/jpeg', quality: 0.9 })
+    return await createImageBitmap(jpeg)
+  } catch (e) {
+    throw new Error(`Não consegui abrir a foto "${arquivo.name}" (${arquivo.type || 'tipo desconhecido'}, ${Math.round(arquivo.size / 1024)} KB). ${e instanceof Error ? e.message : ''}`)
+  }
 }
 
 /** Reduz a foto (celular gera arquivos enormes) antes de enviar. */
