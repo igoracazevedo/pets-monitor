@@ -278,3 +278,12 @@ dbf = BancoFalso()
 vf = Varredura({**cfg3, "cameras": [{"nome": "A", "fonte": "arquivo", "caminho": str(tmp / "sala.jpg")}, {"nome": "B", "fonte": "arquivo", "caminho": str(tmp / "sala.jpg")}]}, dbf, DetectorFalso())
 assert vf.fotos_agora({"cam-B"}) == 1 and vf.fotos_agora() == 2 and dbf.fotos.count("ao-vivo/cam-B.jpg") == 2 and dbf.fotos.count("ao-vivo/cam-A.jpg") == 1
 print("bater foto: ok")
+
+
+# ---- dois animais juntos continuam dois; o mesmo animal com dois rótulos vira um ----
+from pets_agent.detect import sem_repetidas
+juntos = sem_repetidas([Deteccao("cachorro", 0.9, (100, 100, 300, 300)), Deteccao("cachorro", 0.8, (240, 120, 420, 300))])  # encostados, IoU baixo
+assert len(juntos) == 2
+repetido = sem_repetidas([Deteccao("cachorro", 0.8, (100, 100, 300, 300)), Deteccao("cachorro", 0.5, (105, 102, 298, 302), True)])
+assert len(repetido) == 1 and not repetido[0].fraca
+print("vários animais na mesma foto: ok")

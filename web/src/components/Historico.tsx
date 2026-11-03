@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
-import { useVisualizador } from './Visualizador'
+import { useVisualizador, type Caixa, type ItemFoto } from './Visualizador'
 import { dataHora, haQuanto } from '../lib/util'
 
 type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string> }
@@ -59,11 +59,39 @@ export default function Historico({ admin }: { admin: boolean }) {
 
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
   const nomePet = (id: string | null, esp?: string | null, pessoa?: string | null) => (esp === 'pessoa' ? (pessoa ? (dados.gente[pessoa] ?? 'Pessoa') : 'Pessoa') : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
-  const { abrir, janela } = useVisualizador()
+  /** Marcação feita à mão na foto (vários animais/pessoas na mesma imagem): vira registro do histórico e amostra de aprendizado. */
+  async function marcarNaFoto(item: ItemFoto, caixa: Caixa, destino: string) {
+    const a = item.extra as Avistamento
+    const [tipo, id] = destino.split(':')
+    const pet = tipo === 'pet' ? dados.pets.find((p) => p.id === id) : undefined
+    const box = { x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) }
+    const ins = await supabase.from('pm_avistamentos').insert({
+      ...box,
+      camera_id: a.camera_id,
+      snapshot_path: a.snapshot_path,
+      visto_em: a.visto_em,
+      confianca: 1,
+      identificacao: 'manual',
+      especie: tipo === 'pessoa' ? 'pessoa' : (pet?.especie ?? 'cachorro'),
+      pet_id: tipo === 'pet' ? id : null,
+      pessoa_id: tipo === 'pessoa' ? id : null,
+    })
+    if (ins.error) throw ins.error
+    if (tipo === 'pet') {
+      const { data: atual } = await supabase.from('pm_ultima_posicao').select('visto_em').eq('pet_id', id).maybeSingle()
+      if (!atual || atual.visto_em < a.visto_em)
+        await supabase.from('pm_ultima_posicao').upsert({ pet_id: id, camera_id: a.camera_id, visto_em: a.visto_em, confianca: 1, ...box, snapshot_path: a.snapshot_path, foto_em: a.visto_em })
+    }
+    if (a.snapshot_path)
+      await supabase.from('pm_correcoes').insert({ camera_id: a.camera_id, snapshot_path: a.snapshot_path, ...box, pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
+    await recarregar()
+  }
+  const opcoes = [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome })), ...Object.entries(dados.gente).map(([id, nome]) => ({ valor: `pessoa:${id}`, nome }))]
+  const { abrir, janela } = useVisualizador(admin ? { opcoes, onMarcar: marcarNaFoto } : undefined)
   const verFoto = (a: Avistamento) => {
     const com = dados.lista.filter((x) => x.snapshot_path && dados.fotos[x.snapshot_path])
     abrir(
-      com.map((x) => ({ id: String(x.id), url: dados.fotos[x.snapshot_path!], titulo: nomePet(x.pet_id, x.especie, x.pessoa_id), legenda: `${nomeCam(x.camera_id)} · ${dataHora(x.visto_em)}` })),
+      com.map((x) => ({ id: String(x.id), url: dados.fotos[x.snapshot_path!], titulo: nomePet(x.pet_id, x.especie, x.pessoa_id), legenda: `${nomeCam(x.camera_id)} · ${dataHora(x.visto_em)}`, extra: x })),
       Math.max(0, com.findIndex((x) => x.id === a.id)),
     )
   }
