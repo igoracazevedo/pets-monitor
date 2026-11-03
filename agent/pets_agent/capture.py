@@ -8,11 +8,15 @@ import numpy as np
 import requests
 
 # RTSP por TCP é mais estável em Wi-Fi; tempo limite de 5 s para não travar a varredura
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000")
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|timeout;5000000|stimeout;5000000")
+
+
+# câmera fora do ar não pode segurar a varredura por 30 s: 5 s para conectar e 8 s para ler
+_LIMITES = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000]
 
 
 def _rtsp(url: str, descartar: int = 5) -> np.ndarray:
-    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, _LIMITES)
     try:
         if not cap.isOpened():
             raise RuntimeError("não conectou (confira IP, usuário/senha e se o RTSP está ativado na câmera)")
@@ -28,7 +32,7 @@ def _rtsp(url: str, descartar: int = 5) -> np.ndarray:
 
 def _http(url: str, usuario: str | None, senha: str | None) -> np.ndarray:
     auth = (usuario, senha) if usuario else None
-    r = requests.get(url, auth=auth, timeout=8)
+    r = requests.get(url, auth=auth, timeout=(4, 8))
     r.raise_for_status()
     img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
@@ -53,7 +57,7 @@ def _snapshot_intelbras(cam: dict) -> np.ndarray:
     ultimo = None
     for auth in (HTTPDigestAuth(cam["usuario"], cam["senha"]), HTTPBasicAuth(cam["usuario"], cam["senha"])):
         try:
-            r = requests.get(url, auth=auth, timeout=8)
+            r = requests.get(url, auth=auth, timeout=(4, 8))
             if r.ok and r.content[:2] == b"\xff\xd8":
                 img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
                 if img is not None:
@@ -85,7 +89,7 @@ class _Fluxo(threading.Thread):
 
     def run(self):
         while True:
-            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG, _LIMITES)
             if not cap.isOpened():
                 self.erro = "não conectou (confira IP, usuário/senha e o RTSP da câmera)"
                 time.sleep(5)
