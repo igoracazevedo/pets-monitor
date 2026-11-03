@@ -13,6 +13,8 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|timeo
 
 # câmera fora do ar não pode segurar a varredura por 30 s: 5 s para conectar e 8 s para ler
 _LIMITES = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000]
+# câmera que mantém a conexão aberta (Mercusys etc.) demora mais para entregar o primeiro quadro
+_LIMITES_LONGOS = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 20000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 20000]
 
 
 def _rtsp(url: str, descartar: int = 5) -> np.ndarray:
@@ -89,9 +91,9 @@ class _Fluxo(threading.Thread):
 
     def run(self):
         while True:
-            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG, _LIMITES)
+            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG, _LIMITES_LONGOS)
             if not cap.isOpened():
-                self.erro = "não conectou (confira IP, usuário/senha e o RTSP da câmera)"
+                self.erro = "não conectou (confira IP, porta, usuário/senha da 'Conta da câmera' e o caminho RTSP)"
                 time.sleep(5)
                 continue
             falhas = 0
@@ -111,7 +113,7 @@ _fluxos: dict[str, _Fluxo] = {}
 
 def _continuo(url: str) -> np.ndarray:
     f = _fluxos.get(url) or _fluxos.setdefault(url, _Fluxo(url))
-    for _ in range(40):  # até ~8 s para o primeiro quadro
+    for _ in range(125):  # até ~25 s para o primeiro quadro (a conexão fica aberta; as próximas voltas são instantâneas)
         if f.quadro is not None:
             break
         time.sleep(0.2)
