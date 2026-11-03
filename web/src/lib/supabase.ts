@@ -39,9 +39,25 @@ export async function urlsDasFotos(caminhos: (string | null | undefined)[]): Pro
   return out
 }
 
+const ehHeic = (a: File) => /hei[cf]/i.test(a.type) || /\.hei[cf]$/i.test(a.name)
+
+/** Abre qualquer foto: HEIC/HEIF (iPhone) é convertido para JPEG no navegador antes de decodificar. */
+async function abrirImagem(arquivo: File): Promise<ImageBitmap> {
+  if (!ehHeic(arquivo)) {
+    try {
+      return await createImageBitmap(arquivo)
+    } catch {
+      /* formato que o navegador não lê: tenta como HEIC */
+    }
+  }
+  const { heicTo } = await import('heic-to')
+  const jpeg = await heicTo({ blob: arquivo, type: 'image/jpeg', quality: 0.9 })
+  return await createImageBitmap(jpeg)
+}
+
 /** Reduz a foto (celular gera arquivos enormes) antes de enviar. */
 export async function reduzirImagem(arquivo: File, lado = 1280): Promise<Blob> {
-  const bmp = await createImageBitmap(arquivo)
+  const bmp = await abrirImagem(arquivo)
   const k = Math.min(1, lado / Math.max(bmp.width, bmp.height))
   const c = document.createElement('canvas')
   c.width = Math.round(bmp.width * k)
@@ -52,7 +68,7 @@ export async function reduzirImagem(arquivo: File, lado = 1280): Promise<Blob> {
 
 /** Recorte quadrado central (foto de perfil). */
 export async function recortarQuadrado(arquivo: File, lado = 512): Promise<Blob> {
-  const bmp = await createImageBitmap(arquivo)
+  const bmp = await abrirImagem(arquivo)
   const m = Math.min(bmp.width, bmp.height)
   const c = document.createElement('canvas')
   c.width = c.height = lado

@@ -108,8 +108,8 @@ export default function Pets({ admin }: { admin: boolean }) {
   return (
     <div className="space-y-4">
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
-      <input ref={inputPerfil} type="file" accept="image/*" hidden onChange={(e) => { const a = e.target.files?.[0]; const p = alvoPerfil.current; e.target.value = ''; if (a && p) void trocarPerfil(p, a) }} />
-      <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files?.length && alvo.current && void enviar(alvo.current, e.target.files).then(() => input.current && (input.current.value = ''))} />
+      <input ref={inputPerfil} type="file" accept="image/*,.heic,.heif" hidden onChange={(e) => { const a = e.target.files?.[0]; const p = alvoPerfil.current; e.target.value = ''; if (a && p) void trocarPerfil(p, a) }} />
+      <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => e.target.files?.length && alvo.current && void enviar(alvo.current, e.target.files).then(() => input.current && (input.current.value = ''))} />
 
       {dados.pets.map((p) => {
         const fotos = dados.fotos.filter((f) => f.pet_id === p.id)
