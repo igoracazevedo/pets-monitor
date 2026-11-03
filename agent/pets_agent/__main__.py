@@ -65,6 +65,70 @@ def cmd_diagnosticar(args):
                     print(f"  foto HTTP ({nome}): {type(e).__name__}: {str(e)[:250]}")
 
 
+def cmd_descobrir(args):
+    """Varre a rede /24 do PC atrás de câmeras Intelbras (porta 37777) e RTSP (554); salva uma foto de cada achada para você ver onde fica."""
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    import requests
+    from requests.auth import HTTPDigestAuth
+
+    cfg = config.carregar(args.config)
+    cams = cfg["cameras"]
+    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        u.connect(("8.8.8.8", 80))
+        meu = u.getsockname()[0]
+    finally:
+        u.close()
+    base = ".".join(meu.split(".")[:3])
+    print(f"PC em {meu}; varrendo {base}.1 a {base}.254 (uns 10 s)...")
+
+    def aberta(ip, porta):
+        s = socket.socket()
+        s.settimeout(1.2)
+        try:
+            s.connect((ip, porta))
+            return True
+        except Exception:
+            return False
+        finally:
+            s.close()
+
+    def sonda(i):
+        ip = f"{base}.{i}"
+        return ip, aberta(ip, 37777), aberta(ip, 554), aberta(ip, 80)
+
+    with ThreadPoolExecutor(64) as ex:
+        achados = [r for r in ex.map(sonda, range(1, 255)) if r[1] or r[2]]
+
+    conhecidos = {c.get("host") or c.get("url", "").split("@")[-1].split(":")[0]: c["nome"] for c in cams}
+    cred = next((c for c in cams if c.get("fonte") == "intelbras"), None)
+    pasta = Path("descobertas")
+    pasta.mkdir(exist_ok=True)
+    print("\nAparelhos com porta de câmera aberta:")
+    for ip, p37777, p554, p80 in achados:
+        tipo = "Intelbras" if p37777 else "RTSP"
+        nome = conhecidos.get(ip)
+        linha = f"  {ip:15} {tipo:9} " + (f"= {nome}" if nome else "NOVO (não está no camera.properties)")
+        if cred and p80 and (p37777 or nome is None):
+            try:
+                r = requests.get(f"http://{ip}/cgi-bin/snapshot.cgi", auth=HTTPDigestAuth(cred["usuario"], cred["senha"]), timeout=(4, 8))
+                if r.ok and r.content[:2] == b"\xff\xd8":
+                    (pasta / f"{ip}.jpg").write_bytes(r.content)
+                    linha += f"  -> foto em descobertas\\{ip}.jpg"
+            except Exception:
+                pass
+        print(linha)
+    achados_ip = {a[0] for a in achados}
+    sumidas = [(ip, n) for ip, n in conhecidos.items() if ip not in achados_ip]
+    if sumidas:
+        print("\nCâmeras do arquivo que NÃO apareceram na rede:")
+        for ip, n in sumidas:
+            print(f"  {n} (antes em {ip})")
+    print("\nSe há câmeras NOVAS com foto, abra as fotos para ver qual é cada uma e troque o IP no camera.properties.")
+
+
 def cmd_ensinar(args):
     """Lê fotos em fotos/<nome do pet>/*.jpg, calcula a cor de cada um e guarda o perfil no Supabase."""
     cfg = config.carregar(args.config)
@@ -183,6 +247,8 @@ def main():
     t = sub.add_parser("testar", help="tira um quadro de uma câmera e mostra o que o detector achou")
     t.add_argument("camera")
     t.set_defaults(fn=cmd_testar)
+    ds = sub.add_parser("descobrir", help="procura as câmeras na rede (quando o IP mudou)")
+    ds.set_defaults(fn=cmd_descobrir)
     dg = sub.add_parser("diagnosticar", help="testa a rede de cada câmera (portas e foto HTTP)")
     dg.add_argument("camera", nargs="?")
     dg.set_defaults(fn=cmd_diagnosticar)
