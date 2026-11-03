@@ -1,4 +1,7 @@
+import re
 import time
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import cv2
@@ -7,6 +10,12 @@ import numpy as np
 from . import capture
 from .identify import Identificador, caracteristica
 from .store import Supabase, agora
+
+
+def slug(nome: str) -> str:
+    """Nome de câmera vira nome de arquivo seguro (sem acento, espaço ou símbolo)."""
+    s = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "camera"
 
 
 def _jpeg(frame: np.ndarray, largura: int) -> bytes:
@@ -68,7 +77,7 @@ class Varredura:
         agora_ts = time.time()
         quadro_path = None
         if agora_ts - self.ultimo_quadro.get(nome, 0) >= self.cfg["quadro_da_camera_a_cada_s"]:
-            quadro_path = f"cameras/{nome}.jpg"
+            quadro_path = f"cameras/{slug(nome)}.jpg"
             self.db.enviar_foto(quadro_path, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
             self.ultimo_quadro[nome] = agora_ts
         self.db.status_camera(reg["id"], True, quadro_path=quadro_path)
@@ -87,7 +96,7 @@ class Varredura:
             mudou = not ant or ant["camera"] != nome or agora_ts - ant["ts"] >= self.cfg["historico_a_cada_s"]
             if mudou:
                 if foto is None:
-                    foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{nome}-{datetime.now():%H%M%S}.jpg"
+                    foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{slug(nome)}-{datetime.now():%H%M%S}.jpg"
                     self.db.enviar_foto(foto, _jpeg(_anotar(frame, marcas), self.cfg["largura_foto"]))
                 self.db.avistamento({**linha, "pet_id": p.pet_id, "especie": d.especie, "snapshot_path": foto})
                 self.ultimo[chave] = {"camera": nome, "ts": agora_ts, "foto": foto}
@@ -98,5 +107,23 @@ class Varredura:
         nomes = ", ".join(p.nome or "animal não identificado" for _, p in achados) or "ninguém"
         return f"{nome}: {nomes}"
 
-    def todas(self) -> list[str]:
+    def todas(self, forcar: bool = False) -> list[str]:
+        if forcar:  # pedido "onde estão agora?": grava foto nova de cada cão visto, mesmo sem ter mudado de câmera
+            self.ultimo.clear()
+            self.ultimo_quadro.clear()
         return [self.uma_camera(c, r) for c, r in self.cameras]
+
+    def ao_vivo(self) -> int:
+        """Um quadro de cada câmera, em paralelo, num caminho fixo (o site recarrega a imagem a cada ~2 s)."""
+
+        def um(par):
+            c, _ = par
+            try:
+                self.db.enviar_foto(f"ao-vivo/{slug(c['nome'])}.jpg", _jpeg(capture.capturar(c), 960))
+                return 1
+            except Exception as e:
+                print(f"  ao vivo {c['nome']}: {e}", flush=True)
+                return 0
+
+        with ThreadPoolExecutor(max_workers=max(1, len(self.cameras))) as ex:
+            return sum(ex.map(um, self.cameras))

@@ -37,6 +37,19 @@ class Supabase:
             raise RuntimeError(f"foto {caminho}: HTTP {r.status_code}")
         return r.content
 
+    def pedidos_pendentes(self) -> list[dict]:
+        return self._rest("GET", "pm_pedidos", {"select": "id", "atendido_em": "is.null"})
+
+    def atender_pedidos(self, ids: list[str]):
+        for i in ids:
+            self._rest("PATCH", "pm_pedidos", {"id": f"eq.{i}"}, json={"atendido_em": agora()})
+
+    def ao_vivo_ativo(self) -> bool:
+        linhas = self._rest("GET", "pm_ao_vivo", {"select": "ate", "id": "eq.1"})
+        if not linhas:
+            return False
+        return datetime.fromisoformat(linhas[0]["ate"].replace("Z", "+00:00")) > datetime.now(timezone.utc)
+
     def cameras(self) -> list[dict]:
         return self._rest("GET", "pm_cameras", {"select": "*", "order": "ordem,nome"})
 

@@ -123,4 +123,23 @@ create policy pm_fotos_pets_enviar on storage.objects for insert to authenticate
 drop policy if exists pm_fotos_pets_apagar on storage.objects;
 create policy pm_fotos_pets_apagar on storage.objects for delete to authenticated using (bucket_id = 'pm-fotos-pets' and public.pm_is_admin());
 
+-- Pedido "onde estão agora?" e modo ao vivo (o agente de casa consulta a cada poucos segundos)
+create table if not exists public.pm_pedidos (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null default 'localizar' check (tipo in ('localizar')),
+  created_at timestamptz not null default now(),
+  atendido_em timestamptz
+);
+create table if not exists public.pm_ao_vivo (
+  id int primary key default 1 check (id = 1),
+  ate timestamptz not null default now()
+);
+insert into public.pm_ao_vivo (id) values (1) on conflict do nothing;
+alter table public.pm_pedidos enable row level security;
+alter table public.pm_ao_vivo enable row level security;
+drop policy if exists pm_pedidos_membros on public.pm_pedidos;
+create policy pm_pedidos_membros on public.pm_pedidos for all to authenticated using (public.pm_is_membro()) with check (public.pm_is_membro());
+drop policy if exists pm_ao_vivo_membros on public.pm_ao_vivo;
+create policy pm_ao_vivo_membros on public.pm_ao_vivo for all to authenticated using (public.pm_is_membro()) with check (public.pm_is_membro());
+
 notify pgrst, 'reload schema';

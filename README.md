@@ -9,7 +9,7 @@ Varre as câmeras de casa e guarda sempre a **última posição** dos pets.
 > A Vercel não alcança câmeras da rede local nem roda processo contínuo, por isso o leitor fica em casa e a Vercel só mostra os dados.
 
 ## 1. Supabase
-Rode `supabase/schema.sql` no SQL Editor. Seu e-mail já entra como admin; outros são liberados em **Ajustes**.
+Rode `supabase/schema.sql` no SQL Editor (pode rodar de novo a cada atualização). Seu e-mail já entra como admin; outros são liberados em **Ajustes**.
 
 ## 2. Site (Vercel)
 Importe o repositório com **Root Directory = `web`**. Variáveis (opcionais, já há padrões):
@@ -29,3 +29,10 @@ python -m pets_agent varrer               # varredura contínua (--uma-vez p/ te
 Também há `Dockerfile` para deixar rodando 24h.
 
 Dica RTSP: `rtsp://usuario:senha@IP:554/stream1` (varia por marca). Use fotos de cada pet em ângulos e luz diferentes para ensinar.
+
+## Uso no site
+- **Início → Onde estão agora?** pede uma varredura na hora e mostra a foto e a câmera de cada cachorra.
+- **Câmeras → Ver ao vivo** atualiza as imagens a cada ~2 s enquanto a tela estiver aberta (o programa de casa só captura nesse modo quando alguém está olhando).
+- **Pets** cadastra pets novos e envia fotos; o programa de casa aprende sozinho em até 2 min.
+
+> "Ao vivo" aqui são quadros atualizados a cada poucos segundos, sem expor as câmeras na internet. Vídeo contínuo exigiria um servidor de vídeo em casa (go2rtc) com túnel seguro; dá para adicionar depois.

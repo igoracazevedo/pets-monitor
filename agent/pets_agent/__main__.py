@@ -117,6 +117,7 @@ def cmd_varrer(args):
         return
     print(f"Varrendo {len(v.cameras)} câmera(s) a cada {cfg['intervalo_s']} s. Ctrl+C para parar.")
     ultimo_sync = 0.0
+    ultima_varredura = 0.0
     while True:
         ini = time.time()
         try:
@@ -124,11 +125,22 @@ def cmd_varrer(args):
                 ultimo_sync = ini
                 if aprender_do_site(db, v.detector):
                     v.recarregar_pets()
-            for linha in v.todas():
-                print(time.strftime("%H:%M:%S"), linha, flush=True)
+            pedidos = db.pedidos_pendentes()
+            if pedidos:  # "onde estão agora?" pedido pelo site
+                for linha in v.todas(forcar=True):
+                    print(time.strftime("%H:%M:%S"), "[pedido]", linha, flush=True)
+                db.atender_pedidos([p["id"] for p in pedidos])
+                ultima_varredura = time.time()
+            elif db.ao_vivo_ativo():  # alguém está olhando as câmeras ao vivo
+                v.ao_vivo()
+                continue
+            elif ini - ultima_varredura >= cfg["intervalo_s"]:
+                ultima_varredura = ini
+                for linha in v.todas():
+                    print(time.strftime("%H:%M:%S"), linha, flush=True)
         except Exception as e:  # nunca morre por um erro isolado
             print("Erro na varredura:", e, flush=True)
-        time.sleep(max(1.0, cfg["intervalo_s"] - (time.time() - ini)))
+        time.sleep(2)
 
 
 def main():

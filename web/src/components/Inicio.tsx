@@ -1,4 +1,5 @@
-import { Cat, Dog } from 'lucide-react'
+import { useState } from 'react'
+import { Cat, Dog, RefreshCw } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera, type Pet, type Posicao } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
@@ -28,15 +29,35 @@ async function carregar(): Promise<Dados> {
 }
 
 export default function Inicio() {
-  const { dados, erro, carregando } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, desconhecidos: 0 })
+  const [buscando, setBuscando] = useState(false)
+  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, desconhecidos: 0 })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
   if (dados.pets.length === 0)
     return <p className="vidro p-6 text-center text-slate-600">Nenhum pet cadastrado ainda. Vá em <strong>Ajustes</strong> ou rode <code>python -m pets_agent ensinar</code> no computador de casa.</p>
 
+  async function localizar() {
+    setBuscando(true)
+    try {
+      const { data, error } = await supabase.from('pm_pedidos').insert({}).select('id').single()
+      if (error || !data) throw error
+      for (let i = 0; i < 25; i++) { // até ~50 s esperando o programa de casa varrer as câmeras
+        await new Promise((r) => setTimeout(r, 2000))
+        const { data: p } = await supabase.from('pm_pedidos').select('atendido_em').eq('id', data.id).single()
+        if (p?.atendido_em) break
+      }
+      await recarregar()
+    } finally {
+      setBuscando(false)
+    }
+  }
+
   const cam = (id: string | null) => dados.cams.find((c) => c.id === id)
   return (
     <div className="space-y-4">
+      <button className="pilula" disabled={buscando} onClick={() => void localizar()}>
+        <RefreshCw size={16} className={buscando ? 'animate-spin' : ''} /> {buscando ? 'Procurando nas câmeras…' : 'Onde estão agora?'}
+      </button>
       <div className="grid gap-4 sm:grid-cols-2">
         {dados.pets.map((pet) => {
           const pos = dados.pos.find((p) => p.pet_id === pet.id)
