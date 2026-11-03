@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
-import { Check, Pencil, Radio } from 'lucide-react'
+import { useState } from 'react'
+import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto, minutosDesde } from '../lib/util'
+
+const horaCompleta = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 export default function Cameras({ admin }: { admin: boolean }) {
   const [editando, setEditando] = useState<string | null>(null)
   const [apelido, setApelido] = useState('')
   const [msg, setMsg] = useState('')
-  const [aoVivo, setAoVivo] = useState(false)
-  const [tic, setTic] = useState(0)
-  const [vivas, setVivas] = useState<Record<string, string>>({})
+  const [buscando, setBuscando] = useState(false)
   const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string> }>(
     async () => {
       const { data, error } = await supabase.from('pm_cameras').select('*').order('ordem').order('nome')
@@ -19,25 +19,30 @@ export default function Cameras({ admin }: { admin: boolean }) {
       return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)) }
     },
     { cams: [], fotos: {} },
-    aoVivo ? 3600_000 : 15000,
+    15000,
   )
 
-  // Ao vivo: avisa o programa de casa (a cada 15 s) e recarrega as imagens a cada 2 s
-  useEffect(() => {
-    if (!aoVivo) return
-    let ativo = true
-    const aviso = () => void supabase.from('pm_ao_vivo').update({ ate: new Date(Date.now() + 40_000).toISOString() }).eq('id', 1)
-    aviso()
-    void urlsDasFotos(dados.cams.map((c) => `ao-vivo/${c.id}.jpg`)).then((u) => ativo && setVivas(u))
-    const a = setInterval(aviso, 15000)
-    const b = setInterval(() => setTic((t) => t + 1), 2000)
-    return () => {
-      ativo = false
-      clearInterval(a)
-      clearInterval(b)
-      void supabase.from('pm_ao_vivo').update({ ate: new Date().toISOString() }).eq('id', 1)
+  // "Ver ao vivo": pede ao programa de casa uma foto nova de cada câmera e mostra a hora de cada captura
+  async function verAoVivo() {
+    setBuscando(true)
+    setMsg('')
+    try {
+      const { data, error } = await supabase.from('pm_pedidos').insert({ tipo: 'fotos' }).select('id').single()
+      if (error || !data) throw error ?? new Error('não consegui enviar o pedido')
+      let atendido = false
+      for (let i = 0; i < 20 && !atendido; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const { data: p } = await supabase.from('pm_pedidos').select('atendido_em').eq('id', data.id).single()
+        atendido = !!p?.atendido_em
+      }
+      if (!atendido) setMsg('O programa de casa não respondeu. Confira se o iniciar.bat está aberto no PC.')
+      await recarregar()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e))
+    } finally {
+      setBuscando(false)
     }
-  }, [aoVivo, dados.cams])
+  }
 
   async function salvarApelido(id: string) {
     const nome = apelido.trim()
@@ -53,19 +58,18 @@ export default function Cameras({ admin }: { admin: boolean }) {
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
     <div className="space-y-3">
-      <button className={`pilula ${aoVivo ? 'bg-rose-600' : ''}`} onClick={() => setAoVivo((v) => !v)}>
-        <Radio size={16} /> {aoVivo ? 'Parar ao vivo' : 'Ver ao vivo'}
+      <button className="pilula" disabled={buscando} onClick={() => void verAoVivo()}>
+        <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
       </button>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}
       {admin && dados.cams.some((c) => c.nome.startsWith('Câmera ')) && (
         <p className="vidro px-3 py-2 text-[12px] text-slate-600">Câmeras novas foram achadas na rede. Olhe a imagem e toque no lápis para dar o nome do local (Cozinha, Quarto…).</p>
       )}
-      {aoVivo && <p className="text-[12px] text-slate-500">Atualiza a cada poucos segundos. Pode levar alguns segundos para a primeira imagem aparecer.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         {dados.cams.map((c) => {
           const fora = c.ultimo_status === 'erro' || minutosDesde(c.ultima_leitura) > 5
-          const viva = aoVivo ? vivas[`ao-vivo/${c.id}.jpg`] : undefined
-          const img = viva ? `${viva}&t=${tic}` : c.ultimo_quadro_path ? dados.fotos[c.ultimo_quadro_path] : undefined
+          const base = c.ultimo_quadro_path ? dados.fotos[c.ultimo_quadro_path] : undefined
+          const img = base ? `${base}${base.includes('?') ? '&' : '?'}t=${c.foto_em ? Date.parse(c.foto_em) : 0}` : undefined
           return (
             <article key={c.id} className={`vidro overflow-hidden ${c.ativo ? '' : 'opacity-60'}`}>
               {img ? <img src={img} alt={c.nome} className="aspect-video w-full object-cover" /> : <div className="flex aspect-video items-center justify-center bg-slate-100 text-slate-400">sem imagem</div>}
@@ -86,8 +90,10 @@ export default function Cameras({ admin }: { admin: boolean }) {
                       )}
                     </h2>
                   )}
-                  <p className="truncate text-[12px] text-slate-500">{c.ambiente ?? 'sem ambiente'} · lida {haQuanto(c.ultima_leitura)}</p>
-                  {c.ultimo_erro && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
+                  <p className="truncate text-[12px] text-slate-500">
+                    {c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : 'Sem foto ainda'}
+                  </p>
+                  {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
                 </div>
                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
               </div>

@@ -149,4 +149,9 @@ alter table public.pm_pets add column if not exists foto_perfil_path text;
 alter table public.pm_cameras add column if not exists identificador text unique;
 alter table public.pm_cameras add column if not exists ip_atual text;
 
+-- "Ver ao vivo": uma foto nova de cada câmera sob demanda, com a hora da captura
+alter table public.pm_cameras add column if not exists foto_em timestamptz;
+alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
+alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos'));
+
 notify pgrst, 'reload schema';

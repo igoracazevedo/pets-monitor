@@ -38,7 +38,7 @@ class Supabase:
         return r.content
 
     def pedidos_pendentes(self) -> list[dict]:
-        return self._rest("GET", "pm_pedidos", {"select": "id", "atendido_em": "is.null"})
+        return self._rest("GET", "pm_pedidos", {"select": "id,tipo", "atendido_em": "is.null"})
 
     def atender_pedidos(self, ids: list[str]):
         for i in ids:
@@ -78,6 +78,7 @@ class Supabase:
         corpo = {"ultima_leitura": agora(), "ultimo_status": "ok" if ok else "erro", "ultimo_erro": None if ok else (erro or "")[:300]}
         if quadro_path:
             corpo["ultimo_quadro_path"] = quadro_path
+            corpo["foto_em"] = agora()  # hora da última imagem guardada desta câmera
         self._rest("PATCH", "pm_cameras", {"id": f"eq.{camera_id}"}, json=corpo)
 
     def salvar_perfil(self, pet_id: str, perfil: dict | None):

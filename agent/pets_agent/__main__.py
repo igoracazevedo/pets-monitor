@@ -161,6 +161,40 @@ def cmd_sondar(args):
         print("Nenhum caminho comum funcionou. Veja no manual/app da câmera o endereço RTSP e o usuário/senha da câmera (nem sempre é o mesmo do app).")
 
 
+def cmd_verificar(args):
+    """Tira uma foto de cada câmera agora, acha os cães e diz quem é quem. Salva as imagens marcadas em verificacao/ (não mexe no histórico do site)."""
+    from .varredura import Varredura, _anotar
+
+    cfg = config.carregar(args.config)
+    db = Supabase()
+    v = Varredura(cfg, db, _detector(cfg))
+    if aprender_do_site(db, v.detector):  # fotos enviadas pelo site desde a última vez
+        v.recarregar_pets()
+    if v.cred:
+        print(f"{v.redescobrir()} câmera(s) Intelbras achada(s) na rede.")
+    if not v.pets or not any(p.get("perfil") for p in v.pets):
+        print("Aviso: nenhum pet com fotos ensinadas ainda; a identificação vai sair como '?'. Envie as fotos na aba Pets do site.")
+    pasta = Path("verificacao")
+    pasta.mkdir(exist_ok=True)
+    for c, reg in v.cameras:
+        nome = reg["nome"]
+        rotulo = f"{nome} ({c.get('host', '')})".replace(" ()", "")
+        try:
+            frame = capture.capturar(c)
+        except Exception as e:
+            print(f"- {rotulo}: SEM IMAGEM ({str(e)[:90]})")
+            continue
+        dets, palpites = v.analisar(frame, reg["id"], aprender=False)
+        marcas = [(d.caixa, f"{p.nome or '?'}") for d, p in zip(dets, palpites)]
+        arq = pasta / f"{(c.get('host') or nome).replace('.', '-')}.jpg"
+        cv2.imwrite(str(arq), _anotar(frame, marcas))
+        if dets:
+            quem = ", ".join(f"{p.nome or 'não identificado'} ({p.como}, {d.confianca:.0%})" for d, p in zip(dets, palpites))
+        else:
+            quem = "nenhum cachorro/gato"
+        print(f"- {rotulo}: {quem}  -> {arq}")
+
+
 def cmd_ensinar(args):
     """Lê fotos em fotos/<nome do pet>/*.jpg, calcula a cor de cada um e guarda o perfil no Supabase."""
     cfg = config.carregar(args.config)
@@ -261,14 +295,14 @@ def cmd_varrer(args):
             if v.precisa_redescobrir():
                 print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
             pedidos = db.pedidos_pendentes()
-            if pedidos:  # "onde estão agora?" pedido pelo site
-                for linha in v.todas(forcar=True):
-                    print(time.strftime("%H:%M:%S"), "[pedido]", linha, flush=True)
+            if pedidos:  # "Onde estão agora?" (varredura completa) ou "Ver ao vivo" (só uma foto de cada câmera)
+                if any(p.get("tipo", "localizar") == "localizar" for p in pedidos):
+                    for linha in v.todas(forcar=True):
+                        print(time.strftime("%H:%M:%S"), "[pedido]", linha, flush=True)
+                    ultima_varredura = time.time()
+                else:
+                    print(time.strftime("%H:%M:%S"), f"[fotos] {v.fotos_agora()} câmera(s)", flush=True)
                 db.atender_pedidos([p["id"] for p in pedidos])
-                ultima_varredura = time.time()
-            elif db.ao_vivo_ativo():  # alguém está olhando as câmeras ao vivo
-                v.ao_vivo()
-                continue
             elif ini - ultima_varredura >= cfg["intervalo_s"]:
                 ultima_varredura = ini
                 for linha in v.todas():
@@ -291,6 +325,8 @@ def main():
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
     so.set_defaults(fn=cmd_sondar)
+    vf = sub.add_parser("verificar", help="uma foto de cada câmera: quem está onde (salva imagens marcadas)")
+    vf.set_defaults(fn=cmd_verificar)
     ds = sub.add_parser("descobrir", help="procura as câmeras na rede (quando o IP mudou)")
     ds.set_defaults(fn=cmd_descobrir)
     dg = sub.add_parser("diagnosticar", help="testa a rede de cada câmera (portas e foto HTTP)")

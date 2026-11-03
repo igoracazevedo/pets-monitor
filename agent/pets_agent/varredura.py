@@ -99,6 +99,22 @@ class Varredura:
             return
         self.cameras = [(c, {**reg, **{k: atuais[reg["id"]].get(k, reg.get(k)) for k in ("nome", "ativo")}} if reg["id"] in atuais else reg) for c, reg in self.cameras]
 
+    def analisar(self, frame, cid: str, aprender: bool = True):
+        """Acha cães/gatos no quadro e diz quem é cada um: pela cor de dia; pelo tamanho no infravermelho."""
+        dets = self.detector.detectar(frame)
+        if dets and eh_noturno(frame):  # infravermelho: sem cor, decide pelo tamanho
+            return dets, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
+        usados: set[str] = set()
+        palpites = []
+        for d in dets:
+            p = self.ident.palpite(caracteristica(frame, d.caixa), usados)
+            if p.pet_id:
+                usados.add(p.pet_id)  # um pet aparece uma vez por quadro
+                if aprender and p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite
+                    self.tamanhos.atualizar(cid, p.pet_id, area_relativa(d.caixa, frame.shape))
+            palpites.append(p)
+        return dets, palpites
+
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
         nome, cid = reg["nome"], reg["id"]  # nome = apelido dado no app; cid = identidade estável da câmera
         if reg.get("ativo") is False:
@@ -115,20 +131,8 @@ class Varredura:
             return f"{nome}: ERRO {e}"
 
         h, w = frame.shape[:2]
-        dets = self.detector.detectar(frame)
-        usados: set[str] = set()
+        dets, palpites = self.analisar(frame, cid)
         marcas, achados = [], []
-        if dets and eh_noturno(frame):  # infravermelho: sem cor, decide pelo tamanho
-            palpites = por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
-        else:
-            palpites = []
-            for d in dets:
-                p = self.ident.palpite(caracteristica(frame, d.caixa), usados)
-                if p.pet_id:
-                    usados.add(p.pet_id)  # um pet aparece uma vez por quadro
-                    if p.como == "cor" and len(self.pets) > 1:  # aprende o tamanho dele nesta câmera para usar à noite
-                        self.tamanhos.atualizar(cid, p.pet_id, area_relativa(d.caixa, frame.shape))
-                palpites.append(p)
         for d, p in zip(dets, palpites):
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
@@ -173,19 +177,22 @@ class Varredura:
         self.atualizar_nomes()
         return [self.uma_camera(c, r) for c, r in self.cameras]
 
-    def ao_vivo(self) -> int:
-        """Um quadro de cada câmera, em paralelo, num caminho fixo (o site recarrega a imagem a cada ~2 s)."""
+    def fotos_agora(self) -> int:
+        """Uma foto nova de cada câmera, em paralelo (botão 'Ver ao vivo' do site). Guarda a hora em foto_em."""
 
         def um(par):
             c, reg = par
             if reg.get("ativo") is False:
                 return 0
             try:
-                self.db.enviar_foto(f"ao-vivo/{reg['id']}.jpg", _jpeg(capture.capturar(c), 960))
+                caminho = f"ao-vivo/{reg['id']}.jpg"
+                self.db.enviar_foto(caminho, _jpeg(capture.capturar(c), self.cfg["largura_foto"]))
+                self.db.status_camera(reg["id"], True, quadro_path=caminho)
                 return 1
             except Exception as e:
-                print(f"  ao vivo {reg['nome']}: {e}", flush=True)
+                self.db.status_camera(reg["id"], False, str(e))
+                print(f"  foto {reg['nome']}: {e}", flush=True)
                 return 0
 
-        with ThreadPoolExecutor(max_workers=max(1, len(self.cameras))) as ex:
+        with ThreadPoolExecutor(max_workers=max(1, min(8, len(self.cameras)))) as ex:
             return sum(ex.map(um, self.cameras))
