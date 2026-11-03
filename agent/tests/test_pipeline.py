@@ -58,6 +58,9 @@ class BancoFalso:
     def ignorar(self):
         return []
 
+    def presenca(self, linha):
+        self.pres = getattr(self, "pres", []) + [linha]
+
     def status_camera(self, cid, ok, erro=None, quadro_path=None):
         self.status.append((cid, ok, erro))
 
@@ -171,3 +174,18 @@ v4 = Varredura(cfg3, BancoFalso(), DetectorAndou())
 v4.todas(); v4.todas()
 assert len(v4.db.avist) == 2                            # andou de verdade: registra de novo
 print("histórico só com mudança relevante: ok")
+
+
+# ---- pessoas ----
+class DetectorGente(DetectorFalso):
+    def detectar(self, frame):
+        return [Deteccao("pessoa", 0.9, (50, 50, 200, 400)), Deteccao("pessoa", 0.8, (300, 60, 420, 380))]
+db5 = BancoFalso()
+v5 = Varredura(cfg3, db5, DetectorGente())
+saida = v5.todas()
+assert "2 pessoa(s)" in saida[0], saida
+assert len(db5.avist) == 1 and db5.avist[0]["especie"] == "pessoa" and db5.avist[0]["pet_id"] is None  # um registro por câmera
+assert db5.pres[-1]["pessoas"] == 2
+v5.todas()
+assert len(db5.avist) == 1  # parada/ainda lá: não enche o histórico
+print("pessoas: ok")

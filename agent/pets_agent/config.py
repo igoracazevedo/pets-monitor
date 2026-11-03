@@ -45,6 +45,7 @@ def carregar(caminho: str | None = None) -> dict:
             raise SystemExit("descobrir_rede: o camera.properties precisa ter ao menos uma câmera 'intelbras' com usuário e senha.")
         cfg["credencial_intelbras"] = {"usuario": intel[0]["usuario"], "senha": intel[0]["senha"]}
         cfg["cameras"] = [c for c in cfg["cameras"] if c.get("fonte") != "intelbras"]
+    cfg.setdefault("detectar_pessoas", True)  # achar pessoas nas câmeras (sem identificar quem é)
     cfg.setdefault("intervalo_s", 15)
     cfg.setdefault("historico_a_cada_s", 0)  # sem registro por tempo: só entra no histórico quando a posição muda de verdade
     cfg.setdefault("quadro_da_camera_a_cada_s", 60)

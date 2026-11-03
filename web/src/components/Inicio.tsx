@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Cat, Dog, RefreshCw } from 'lucide-react'
-import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao } from '../lib/supabase'
+import { Cat, Dog, RefreshCw, Users } from 'lucide-react'
+import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type Pet, type Posicao, type Presenca } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
-type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number }
+type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[] }
 
 async function carregar(): Promise<Dados> {
-  const [pets, pos, cams, desc] = await Promise.all([
+  const [pets, pos, cams, desc, presenca] = await Promise.all([
     supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'),
     supabase.from('pm_ultima_posicao').select('*'),
     supabase.from('pm_cameras').select('*'),
@@ -15,15 +15,19 @@ async function carregar(): Promise<Dados> {
       .from('pm_avistamentos')
       .select('id', { count: 'exact', head: true })
       .is('pet_id', null)
+      .neq('especie', 'pessoa')
       .gte('visto_em', new Date(Date.now() - 3600_000).toISOString()),
+    supabase.from('pm_presenca').select('*'),
   ])
   if (pets.error) throw new Error(pets.error.message)
   const p = (pos.data ?? []) as Posicao[]
+  const gente = ((presenca.data ?? []) as Presenca[]).filter((g) => g.ultima_vez).sort((a, b) => (b.ultima_vez ?? '').localeCompare(a.ultima_vez ?? ''))
   return {
     pets: (pets.data ?? []) as Pet[],
     pos: p,
     cams: (cams.data ?? []) as Camera[],
-    fotos: await urlsDasFotos(p.map((x) => x.snapshot_path)),
+    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path)]),
+    gente,
     perfis: await urlsDosPets(((pets.data ?? []) as Pet[]).map((x) => x.foto_perfil_path)),
     desconhecidos: desc.count ?? 0,
   }
@@ -31,9 +35,38 @@ async function carregar(): Promise<Dados> {
 
 export default function Inicio({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
-  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0 })
+  const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [] })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
   if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
+  const pessoasAgora = dados.gente.filter((g) => g.pessoas > 0 && minutosDesde(g.ultima_vez) < 3)
+  const ultimaPessoa = dados.gente[0]
+  const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? 'Câmera removida'
+  const secaoPessoas = (
+    <section className="vidro space-y-2 p-4">
+      <h2 className="flex items-center gap-2 font-bold text-slate-900">
+        <Users size={18} strokeWidth={1.9} className="text-cyan-800" /> Pessoas
+      </h2>
+      {pessoasAgora.length > 0 ? (
+        <ul className="space-y-2">
+          {pessoasAgora.map((g) => (
+            <li key={g.camera_id} className="flex items-center gap-3">
+              {g.snapshot_path && dados.fotos[g.snapshot_path] && <img src={dados.fotos[g.snapshot_path]} alt="" className="h-12 w-20 shrink-0 rounded-xl object-cover" />}
+              <p className="min-w-0 text-sm text-slate-700">
+                <strong className="text-slate-900">{nomeCam(g.camera_id)}</strong> · {g.pessoas} {g.pessoas === 1 ? 'pessoa' : 'pessoas'} agora
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : ultimaPessoa ? (
+        <p className="text-sm text-slate-600">
+          Ninguém nas câmeras agora. Última vez: <strong className="text-slate-900">{nomeCam(ultimaPessoa.camera_id)}</strong>, {haQuanto(ultimaPessoa.ultima_vez)}.
+        </p>
+      ) : (
+        <p className="text-sm text-slate-500">Nenhuma pessoa vista nas câmeras ainda.</p>
+      )}
+    </section>
+  )
+
   if (dados.pets.length === 0)
     return <p className="vidro p-6 text-center text-slate-600">Nenhum pet cadastrado ainda. Vá em <strong>Ajustes</strong> ou rode <code>python -m pets_agent ensinar</code> no computador de casa.</p>
 
@@ -123,6 +156,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
           )
         })}
       </div>
+      {secaoPessoas}
       {dados.desconhecidos > 0 && (
         <p className="vidro px-4 py-3 text-[12px] text-slate-600">
           {dados.desconhecidos} avistamento(s) de animal sem identificação na última hora. Veja no Histórico.

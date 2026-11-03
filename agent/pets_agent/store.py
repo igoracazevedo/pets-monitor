@@ -54,6 +54,9 @@ class Supabase:
             return False
         return datetime.fromisoformat(linhas[0]["ate"].replace("Z", "+00:00")) > datetime.now(timezone.utc)
 
+    def presenca(self, linha: dict):
+        self._rest("POST", "pm_presenca", {"on_conflict": "camera_id"}, json=linha, extra={"Prefer": "resolution=merge-duplicates"})
+
     def ignorar(self) -> list[dict]:
         return self._rest("GET", "pm_ignorar", {"select": "*"})
 

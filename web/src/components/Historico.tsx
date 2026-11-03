@@ -10,7 +10,8 @@ export default function Historico({ admin }: { admin: boolean }) {
   const { dados, erro, carregando, recarregar } = useDados<Dados>(
     async () => {
       let q = supabase.from('pm_avistamentos').select('*').order('visto_em', { ascending: false }).limit(80)
-      if (pet === 'desconhecido') q = q.is('pet_id', null)
+      if (pet === 'pessoas') q = q.eq('especie', 'pessoa')
+      else if (pet === 'desconhecido') q = q.is('pet_id', null).neq('especie', 'pessoa')
       else if (pet !== 'todos') q = q.eq('pet_id', pet)
       const [pets, cams, lista] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q])
       if (lista.error) throw new Error(lista.error.message)
@@ -33,7 +34,7 @@ export default function Historico({ admin }: { admin: boolean }) {
   }
 
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
-  const nomePet = (id: string | null) => (id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
+  const nomePet = (id: string | null, esp?: string | null) => (esp === 'pessoa' ? 'Pessoa' : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
 
   return (
     <div className="space-y-3">
@@ -45,6 +46,7 @@ export default function Historico({ admin }: { admin: boolean }) {
           </option>
         ))}
         <option value="desconhecido">Não identificados</option>
+        <option value="pessoas">Pessoas</option>
       </select>
       {carregando ? (
         <p className="p-6 text-center text-slate-500">Carregando…</p>
@@ -62,7 +64,7 @@ export default function Historico({ admin }: { admin: boolean }) {
                 <span className="h-14 w-24 shrink-0 rounded-xl bg-slate-100" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id)}</p>
+                <p className="truncate font-semibold text-slate-900">{nomePet(a.pet_id, a.especie)}</p>
                 <p className="truncate text-[12px] text-slate-500">
                   {nomeCam(a.camera_id)} · {dataHora(a.visto_em)} · {haQuanto(a.visto_em)}
                 </p>

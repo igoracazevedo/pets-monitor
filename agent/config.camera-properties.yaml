@@ -10,6 +10,9 @@ historico_a_cada_s: 0  # 0 = sem registro por tempo: só entra no histórico qua
 quadro_da_camera_a_cada_s: 60
 largura_foto: 960
 
+# Achar pessoas nas câmeras (só detecta; não reconhece quem é). false desliga.
+detectar_pessoas: true
+
 deteccao:
   modelo: yolov8s.pt
   confianca_minima: 0.25

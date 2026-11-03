@@ -5,6 +5,7 @@ import numpy as np
 # Classes do COCO que interessam: cachorro e gato valem direto; "urso de pelúcia/urso/ovelha" é como o modelo costuma rotular
 # cachorros pequenos e peludos (spitz), então só valem se a cor bater com um pet conhecido.
 FORTES = {15: "gato", 16: "cachorro"}
+PESSOA = {0: "pessoa"}  # só quando `detectar_pessoas` está ligado
 FRACAS = {77: "cachorro", 21: "cachorro", 18: "cachorro"}
 
 
@@ -17,16 +18,17 @@ class Deteccao:
 
 
 class Detector:
-    def __init__(self, modelo: str, confianca: float, tamanho: int, confianca_fraca: float = 0.3):
+    def __init__(self, modelo: str, confianca: float, tamanho: int, confianca_fraca: float = 0.3, pessoas: bool = False):
         from ultralytics import YOLO  # importa aqui: demora e só é preciso ao detectar
 
         self.modelo = YOLO(modelo)
         self.confianca = confianca
         self.confianca_fraca = max(confianca, confianca_fraca)
         self.tamanho = tamanho
+        self.pessoas = pessoas
 
     def detectar(self, frame: np.ndarray, com_fracas: bool = True) -> list[Deteccao]:
-        classes = list(FORTES) + (list(FRACAS) if com_fracas else [])
+        classes = list(FORTES) + (list(FRACAS) if com_fracas else []) + (list(PESSOA) if self.pessoas else [])
         res = self.modelo.predict(frame, imgsz=self.tamanho, conf=self.confianca, classes=classes, verbose=False)[0]
         out = []
         for b in res.boxes:
@@ -35,5 +37,5 @@ class Detector:
             if fraca and conf < self.confianca_fraca:
                 continue
             x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
-            out.append(Deteccao((FORTES | FRACAS)[cls], conf, (x1, y1, x2, y2), fraca))
+            out.append(Deteccao((FORTES | FRACAS | PESSOA)[cls], conf, (x1, y1, x2, y2), fraca))
         return sorted(out, key=lambda d: -d.confianca)

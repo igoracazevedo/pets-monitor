@@ -170,4 +170,18 @@ create policy pm_ignorar_ler on public.pm_ignorar for select to authenticated us
 drop policy if exists pm_ignorar_admin on public.pm_ignorar;
 create policy pm_ignorar_admin on public.pm_ignorar for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- Pessoas: quantas há agora em cada câmera (o agente atualiza a cada volta em que muda)
+create table if not exists public.pm_presenca (
+  camera_id uuid primary key references public.pm_cameras(id) on delete cascade,
+  pessoas int not null default 0,
+  ultima_vez timestamptz,
+  snapshot_path text,
+  foto_em timestamptz
+);
+alter table public.pm_presenca enable row level security;
+drop policy if exists pm_presenca_ler on public.pm_presenca;
+create policy pm_presenca_ler on public.pm_presenca for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_presenca_admin on public.pm_presenca;
+create policy pm_presenca_admin on public.pm_presenca for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+
 notify pgrst, 'reload schema';

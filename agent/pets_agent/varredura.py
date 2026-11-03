@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from . import capture
-from .identify import Identificador, caracteristica
+from .identify import Identificador, Palpite, caracteristica
 from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
 from .store import Supabase, agora
 
@@ -63,6 +63,7 @@ class Varredura:
         self.relatado: set[str] = set()
         self.ultima_descoberta = 0.0
         self.ultimo_nomes = 0.0
+        self.estado_presenca: dict[str, tuple[int, float]] = {}
         self.ignorar: dict[str, list[tuple[float, float, float, float]]] = {}
         # estado em memória: onde cada pet foi visto por último (para não encher o histórico)
         self.ultimo: dict[str, dict] = {}
@@ -134,9 +135,13 @@ class Varredura:
             x1, y1, x2, y2 = d.caixa
             return any(iou((x1 / w, y1 / h, x2 / w, y2 / h), m) > 0.4 for m in marcados)
 
-        dets = [d for d in self.detector.detectar(frame) if not (noite and d.fraca) and not objeto(d)]
+        todas = [d for d in self.detector.detectar(frame) if not (noite and d.fraca) and not objeto(d)]
+        gente = [d for d in todas if d.especie == "pessoa"]
+        dets = [d for d in todas if d.especie != "pessoa"]
+        extra_d = gente
+        extra_p = [Palpite(None, "Pessoa", 1.0, "pessoa") for _ in gente]
         if dets and noite:  # infravermelho: sem cor, decide pelo tamanho
-            return dets, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos)
+            return dets + extra_d, por_tamanho([d.caixa for d in dets], frame.shape, cid, self.pets, self.tamanhos) + extra_p
         usados: set[str] = set()
         dets_ok, palpites = [], []
         for d in dets:
@@ -149,7 +154,7 @@ class Varredura:
                     self.tamanhos.atualizar(cid, p.pet_id, area_relativa(d.caixa, frame.shape))
             dets_ok.append(d)
             palpites.append(p)
-        return dets_ok, palpites
+        return dets_ok + extra_d, palpites + extra_p
 
     def uma_camera(self, cfg_cam: dict, reg: dict) -> str:
         nome, cid = reg["nome"], reg["id"]  # nome = apelido dado no app; cid = identidade estável da câmera
@@ -182,8 +187,14 @@ class Varredura:
         self.db.status_camera(reg["id"], True, quadro_path=quadro_path)
 
         foto = None
+        n_pessoas = sum(1 for d, _ in achados if d.especie == "pessoa")
+        pessoa_vista = False
         for d, p in achados:
-            chave = p.pet_id or f"?{cid}"
+            eh_pessoa = d.especie == "pessoa"
+            if eh_pessoa and pessoa_vista:
+                continue  # várias pessoas no quadro: um registro só (a contagem vai na presença)
+            pessoa_vista = pessoa_vista or eh_pessoa
+            chave = f"pessoa:{cid}" if eh_pessoa else (p.pet_id or f"?{cid}")
             x1, y1, x2, y2 = d.caixa
             pos = {
                 "camera_id": cid,
@@ -194,6 +205,8 @@ class Varredura:
             # só vira item do histórico (e foto nova) quando é relevante: apareceu, mudou de câmera ou andou de verdade
             # (ou quando você pede "Onde estão agora?", que limpa a memória e força um registro)
             relevante = not ant or ant["camera"] != cid or iou(d.caixa, ant["caixa"]) < self.cfg.get("movimento_iou", 0.5)
+            if eh_pessoa and ant:  # gente se mexe o tempo todo: no máximo um registro a cada alguns minutos por câmera
+                relevante = relevante and agora_ts - ant["ts"] >= self.cfg.get("pessoas_intervalo_s", 180)
             if relevante:
                 if foto is None:
                     foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{cid[:8]}-{datetime.now():%H%M%S}.jpg"
@@ -207,8 +220,29 @@ class Varredura:
                 ref = self.ultimo[chave]
                 # "visto_em" = última vez que o vi; "foto_em" = quando a foto foi tirada (a foto só muda quando a posição muda)
                 self.db.ultima_posicao({**pos, "pet_id": p.pet_id, "visto_em": agora(), "snapshot_path": ref["foto"], "foto_em": ref["foto_em"]})
-        nomes = ", ".join(p.nome or "animal não identificado" for _, p in achados) or "ninguém"
-        return f"{nome}: {nomes}"
+        self.presenca(cid, n_pessoas, self.ultimo.get(f"pessoa:{cid}"))
+        nomes = ", ".join(p.nome or "animal não identificado" for _, p in achados if p.como != "pessoa")
+        if n_pessoas:
+            nomes = (nomes + ", " if nomes else "") + f"{n_pessoas} pessoa(s)"
+        return f"{nome}: {nomes or 'ninguém'}"
+
+    def presenca(self, cid: str, n: int, ref: dict | None):
+        """Quantas pessoas há agora em cada câmera (para a tela Início). Só grava quando muda ou a cada 60 s com gente presente."""
+        antes, ts = self.estado_presenca.get(cid, (0, 0.0))
+        agora_ts = time.time()
+        if n == antes and (n == 0 or agora_ts - ts < 60):
+            return
+        self.estado_presenca[cid] = (n, agora_ts)
+        linha = {"camera_id": cid, "pessoas": n}
+        if n:
+            linha["ultima_vez"] = agora()
+            if ref:
+                linha["snapshot_path"] = ref["foto"]
+                linha["foto_em"] = ref["foto_em"]
+        try:
+            self.db.presenca(linha)
+        except Exception as e:
+            print(f"  presença {cid[:6]}: {e}", flush=True)
 
     def todas(self, forcar: bool = False) -> list[str]:
         if forcar:  # pedido "onde estão agora?": grava foto nova de cada cão visto, mesmo sem ter mudado de câmera

@@ -21,7 +21,9 @@ export type Camera = {
   ip_atual: string | null
 }
 export type Posicao = { pet_id: string; camera_id: string | null; visto_em: string; confianca: number | null; snapshot_path: string | null; foto_em: string | null; x: number | null; y: number | null; w: number | null; h: number | null }
+export type Presenca = { camera_id: string; pessoas: number; ultima_vez: string | null; snapshot_path: string | null; foto_em: string | null }
 export type Avistamento = {
+  especie?: string | null
   id: number
   pet_id: string | null
   camera_id: string
