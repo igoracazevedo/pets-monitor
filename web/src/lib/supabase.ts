@@ -111,7 +111,35 @@ export async function urlsDosPets(caminhos: (string | null | undefined)[]): Prom
   return out
 }
 
-/** "Não é pet": o detector passa a ignorar esse lugar na câmera (ex.: urso de pelúcia grande). */
-export async function marcarComoObjeto(camera_id: string, x: number, y: number, w: number, h: number) {
-  return supabase.from('pm_ignorar').insert({ camera_id, x, y, w, h })
+type Caixa = { x: number | null; y: number | null; w: number | null; h: number | null }
+
+const iou = (a: Caixa, b: Caixa) => {
+  const [ax, ay, aw, ah, bx, by, bw, bh] = [a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h].map((v) => Number(v ?? 0))
+  const ix = Math.max(0, Math.min(ax + aw, bx + bw) - Math.max(ax, bx))
+  const iy = Math.max(0, Math.min(ay + ah, by + bh) - Math.max(ay, by))
+  const inter = ix * iy
+  const uni = aw * ah + bw * bh - inter
+  return uni > 0 ? inter / uni : 0
+}
+
+/**
+ * "Não é pet": o detector passa a ignorar esse lugar na câmera (ex.: urso de pelúcia grande) e todos os registros
+ * parecidos (mesma câmera, mesmo lugar) saem do histórico e da última posição. Devolve quantos registros foram apagados.
+ */
+export async function marcarComoObjeto(camera_id: string, x: number, y: number, w: number, h: number): Promise<number> {
+  const alvo = { x, y, w, h }
+  const ins = await supabase.from('pm_ignorar').insert({ camera_id, x, y, w, h })
+  if (ins.error) throw new Error(ins.error.message)
+
+  let apagados = 0
+  const { data: regs } = await supabase.from('pm_avistamentos').select('id,x,y,w,h').eq('camera_id', camera_id).limit(5000)
+  const ids = ((regs ?? []) as (Caixa & { id: number })[]).filter((r) => iou(r, alvo) > 0.4).map((r) => r.id)
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase.from('pm_avistamentos').delete().in('id', ids.slice(i, i + 200))
+    if (!error) apagados += Math.min(200, ids.length - i)
+  }
+  const { data: pos } = await supabase.from('pm_ultima_posicao').select('pet_id,x,y,w,h').eq('camera_id', camera_id)
+  const pets = ((pos ?? []) as (Caixa & { pet_id: string })[]).filter((r) => iou(r, alvo) > 0.4).map((r) => r.pet_id)
+  if (pets.length) await supabase.from('pm_ultima_posicao').delete().in('pet_id', pets)
+  return apagados
 }

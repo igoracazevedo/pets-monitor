@@ -22,10 +22,13 @@ export default function Historico({ admin }: { admin: boolean }) {
   )
   async function naoEPet(a: Avistamento) {
     if (a.x == null || a.y == null || a.w == null || a.h == null) return
-    if (!confirm('Isso não é um pet? O app vai ignorar esse lugar nessa câmera daqui para frente.')) return
-    await marcarComoObjeto(a.camera_id, a.x, a.y, a.w, a.h)
-    await supabase.from('pm_avistamentos').delete().eq('id', a.id)
-    if (a.pet_id) await supabase.from('pm_ultima_posicao').delete().eq('pet_id', a.pet_id).eq('snapshot_path', a.snapshot_path ?? '')
+    if (!confirm('Isso não é um pet? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.')) return
+    try {
+      const n = await marcarComoObjeto(a.camera_id, a.x, a.y, a.w, a.h)
+      alert(n > 1 ? `Pronto. Apaguei também ${n - 1} registro(s) iguais desse lugar.` : 'Pronto. Esse lugar será ignorado.')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Não consegui marcar.')
+    }
     await recarregar()
   }
 

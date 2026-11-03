@@ -55,9 +55,13 @@ export default function Inicio({ admin }: { admin: boolean }) {
 
   async function naoEPet(pos: Posicao) {
     if (!pos.camera_id || pos.x == null || pos.y == null || pos.w == null || pos.h == null) return
-    if (!confirm('Isso não é este pet? O app vai ignorar esse lugar nessa câmera daqui para frente.')) return
-    await marcarComoObjeto(pos.camera_id, pos.x, pos.y, pos.w, pos.h)
-    await supabase.from('pm_ultima_posicao').delete().eq('pet_id', pos.pet_id)
+    if (!confirm('Isso não é este pet? O app vai ignorar esse lugar nessa câmera e apagar os registros iguais.')) return
+    try {
+      const n = await marcarComoObjeto(pos.camera_id, pos.x, pos.y, pos.w, pos.h)
+      alert(n > 1 ? `Pronto. Apaguei também ${n - 1} registro(s) iguais desse lugar.` : 'Pronto. Esse lugar será ignorado.')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Não consegui marcar.')
+    }
     await recarregar()
   }
 
