@@ -234,4 +234,20 @@ create policy pm_push_proprio on public.pm_push for all to authenticated
 alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
 alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste'));
 
+-- Correções feitas no Histórico ("quem foi encontrado"): o programa de casa aprende com elas
+create table if not exists public.pm_correcoes (
+  id uuid primary key default gen_random_uuid(),
+  avistamento_id bigint,
+  camera_id uuid,
+  snapshot_path text not null,
+  x numeric(5, 4) not null, y numeric(5, 4) not null, w numeric(5, 4) not null, h numeric(5, 4) not null,
+  pet_id uuid references public.pm_pets(id) on delete cascade,
+  pessoa_id uuid references public.pm_pessoas(id) on delete cascade,
+  aplicada boolean not null default false,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_correcoes enable row level security;
+drop policy if exists pm_correcoes_admin on public.pm_correcoes;
+create policy pm_correcoes_admin on public.pm_correcoes for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+
 notify pgrst, 'reload schema';

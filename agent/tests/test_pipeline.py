@@ -248,3 +248,26 @@ vn2.pets = [{**p, "notificar": False} for p in pets]
 vn2.todas()
 assert vn2.notificador.msgs == []  # pet sem "Avisar" não notifica
 print("avisos no celular: ok")
+
+
+# ---- correção no Histórico vira amostra de aprendizado ----
+import importlib
+principal = importlib.import_module("pets_agent.__main__")
+ok_jpg, buf = cv2.imencode(".jpg", cena(MARROM, CAIXA))
+
+class BancoCorrecao:
+    def __init__(self):
+        self.salvos, self.feitas = [], []
+        self.pet = {"id": "p1", "nome": "Marrom", "perfil": criar_perfil([caracteristica(cena(CLARO, CAIXA), CAIXA)])}
+    def correcoes_pendentes(self):
+        return [{"id": "c1", "snapshot_path": "x.jpg", "x": 200 / 640, "y": 150 / 480, "w": 220 / 640, "h": 250 / 480, "pet_id": "p1", "pessoa_id": None}]
+    def baixar_snapshot(self, caminho): return buf.tobytes()
+    def pet_por_id(self, i): return self.pet
+    def salvar_perfil(self, i, perfil): self.salvos.append(perfil)
+    def correcao_aplicada(self, i): self.feitas.append(i)
+
+dbc = BancoCorrecao()
+assert principal.aprender_correcoes(dbc) == 1 and dbc.feitas == ["c1"]
+perfil_novo = dbc.salvos[0]
+assert sum(1 for a in perfil_novo["hists"] if a["o"] == "camera") == 1 and sum(1 for a in perfil_novo["hists"] if a["o"] == "foto") == 1
+print("correção do histórico aprendida: ok")

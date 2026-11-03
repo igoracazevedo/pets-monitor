@@ -341,6 +341,41 @@ def aprender_pessoas(db) -> int:
     return len(pendentes)
 
 
+def aprender_correcoes(db, rostos=None) -> int:
+    """Correções feitas no Histórico ("quem foi encontrado"): a imagem do avistamento vira mais uma amostra do pet/pessoa certo."""
+    import numpy as np
+
+    feitas = 0
+    for c in db.correcoes_pendentes():
+        try:
+            img = cv2.imdecode(np.frombuffer(db.baixar_snapshot(c["snapshot_path"]), np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                raise RuntimeError("imagem ilegível")
+            h, w = img.shape[:2]
+            x1, y1 = int(float(c["x"]) * w), int(float(c["y"]) * h)
+            caixa = (x1, y1, x1 + int(float(c["w"]) * w), y1 + int(float(c["h"]) * h))
+            if c.get("pet_id"):
+                pet = db.pet_por_id(c["pet_id"])
+                perfil = (pet or {}).get("perfil") or {}
+                antigas_foto = [np.array(a["h"], dtype=np.float32) for a in perfil.get("hists", []) if a.get("o") != "camera"]
+                if not antigas_foto and perfil.get("hist"):
+                    antigas_foto = [np.array(perfil["hist"], dtype=np.float32)]
+                db.salvar_perfil(c["pet_id"], criar_perfil(antigas_foto, amostras_de_camera(perfil) + [caracteristica(img, caixa)]))
+                print(f"Correção aprendida: {pet['nome'] if pet else c['pet_id']}", flush=True)
+            elif c.get("pessoa_id") and rostos is not None:
+                x1, y1, x2, y2 = caixa
+                emb = rostos.maior(img[max(0, y1) : y2, max(0, x1) : x2])
+                if emb is not None:
+                    atuais = db.rostos_das_pessoas().get(c["pessoa_id"], [])
+                    db.salvar_rostos(c["pessoa_id"], (atuais + [[round(float(v), 5) for v in emb]])[-40:])
+                    print("Correção aprendida: rosto de pessoa", flush=True)
+        except Exception as e:
+            print(f"  correção ignorada: {e}", flush=True)
+        db.correcao_aplicada(c["id"])  # mesmo se falhar, não fica tentando para sempre
+        feitas += 1
+    return feitas
+
+
 def cmd_sincronizar(args):
     cfg = config.carregar(args.config)
     db = Supabase()
@@ -381,8 +416,11 @@ def cmd_varrer(args):
                 try:
                     if aprender_pessoas(db):
                         v.carregar_pessoas()
+                    if aprender_correcoes(db, v.rostos):
+                        v.recarregar_pets()
+                        v.carregar_pessoas()
                 except Exception as e:
-                    print("Pessoas (rosto):", e, flush=True)
+                    print("Pessoas (rosto) / correções:", e, flush=True)
             if v.precisa_redescobrir():
                 print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
             pedidos = db.pedidos_pendentes()

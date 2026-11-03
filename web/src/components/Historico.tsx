@@ -33,6 +33,29 @@ export default function Historico({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
+  /** "Quem é?": corrige o registro, acerta a última posição e manda a imagem para o programa de casa aprender. */
+  async function corrigir(a: Avistamento, destino: string) {
+    if (!destino) return
+    const [tipo, id] = destino.split(':')
+    try {
+      const pet = tipo === 'pet' ? dados.pets.find((p) => p.id === id) : undefined
+      const mudanca = tipo === 'pet' ? { pet_id: id, pessoa_id: null, especie: pet?.especie ?? 'cachorro', identificacao: 'manual' } : { pet_id: null, pessoa_id: id, especie: 'pessoa', identificacao: 'manual' }
+      const up = await supabase.from('pm_avistamentos').update(mudanca).eq('id', a.id)
+      if (up.error) throw up.error
+      if (tipo === 'pet') {
+        if (a.pet_id && a.pet_id !== id && a.snapshot_path) await supabase.from('pm_ultima_posicao').delete().eq('pet_id', a.pet_id).eq('snapshot_path', a.snapshot_path)
+        const { data: atual } = await supabase.from('pm_ultima_posicao').select('visto_em').eq('pet_id', id).maybeSingle()
+        if (!atual || atual.visto_em < a.visto_em)
+          await supabase.from('pm_ultima_posicao').upsert({ pet_id: id, camera_id: a.camera_id, visto_em: a.visto_em, confianca: a.confianca, x: a.x, y: a.y, w: a.w, h: a.h, snapshot_path: a.snapshot_path, foto_em: a.visto_em })
+      }
+      if (a.snapshot_path && a.x != null && a.y != null && a.w != null && a.h != null)
+        await supabase.from('pm_correcoes').insert({ avistamento_id: a.id, camera_id: a.camera_id, snapshot_path: a.snapshot_path, x: a.x, y: a.y, w: a.w, h: a.h, pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : (e as { message?: string })?.message ?? 'Não consegui corrigir.')
+    }
+    await recarregar()
+  }
+
   const nomeCam = (id: string) => dados.cams.find((c) => c.id === id)?.nome ?? '—'
   const nomePet = (id: string | null, esp?: string | null, pessoa?: string | null) => (esp === 'pessoa' ? (pessoa ? (dados.gente[pessoa] ?? 'Pessoa') : 'Pessoa') : id ? (dados.pets.find((p) => p.id === id)?.nome ?? '—') : 'Animal não identificado')
 
@@ -70,9 +93,35 @@ export default function Historico({ admin }: { admin: boolean }) {
                 </p>
               </div>
               {admin && (
-                <button className="shrink-0 text-[11px] font-semibold text-rose-600" onClick={() => void naoEPet(a)}>
-                  Não é pet
-                </button>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <select
+                    aria-label="Quem foi encontrado"
+                    className="max-w-[110px] !px-2 !py-1 text-[11px]"
+                    value=""
+                    onChange={(e) => void corrigir(a, e.target.value)}
+                  >
+                    <option value="">Quem é?</option>
+                    <optgroup label="Pets">
+                      {dados.pets.map((p) => (
+                        <option key={p.id} value={`pet:${p.id}`}>
+                          {p.nome}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {Object.keys(dados.gente).length > 0 && (
+                      <optgroup label="Pessoas">
+                        {Object.entries(dados.gente).map(([id, nome]) => (
+                          <option key={id} value={`pessoa:${id}`}>
+                            {nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <button className="text-[11px] font-semibold text-rose-600" onClick={() => void naoEPet(a)}>
+                    Não é pet
+                  </button>
+                </div>
               )}
               {a.confianca != null && <span className="shrink-0 text-[11px] text-slate-400">{Math.round(a.confianca * 100)}%</span>}
             </li>

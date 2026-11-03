@@ -25,6 +25,22 @@ class Supabase:
     def pets(self) -> list[dict]:
         return self._rest("GET", "pm_pets", {"select": "*", "ativo": "eq.true", "order": "nome"})
 
+    def pet_por_id(self, pet_id: str) -> dict | None:
+        r = self._rest("GET", "pm_pets", {"select": "*", "id": f"eq.{pet_id}"})
+        return r[0] if r else None
+
+    def correcoes_pendentes(self) -> list[dict]:
+        return self._rest("GET", "pm_correcoes", {"select": "*", "aplicada": "is.false", "order": "created_at"})
+
+    def correcao_aplicada(self, correcao_id: str):
+        self._rest("PATCH", "pm_correcoes", {"id": f"eq.{correcao_id}"}, json={"aplicada": True})
+
+    def baixar_snapshot(self, caminho: str) -> bytes:
+        r = requests.get(f"{self.url}/storage/v1/object/pm-snapshots/{caminho}", headers=self.h, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"snapshot {caminho}: HTTP {r.status_code}")
+        return r.content
+
     def pet_por_nome(self, nome: str) -> dict | None:
         r = self._rest("GET", "pm_pets", {"select": "*", "nome": f"ilike.{nome}"})
         return r[0] if r else None
