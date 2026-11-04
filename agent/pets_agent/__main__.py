@@ -308,6 +308,65 @@ def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = ""
         sk.close()
 
 
+def _onvif(ip: str, porta: int, usuario: str = "", senha: str = "", timeout: float = 6.0) -> list[str]:
+    """Pergunta à câmera, pelo ONVIF, qual é o endereço RTSP dela (usa a porta ONVIF, não a 554). Devolve linhas para mostrar."""
+    import base64
+    import hashlib
+    import os
+    import re
+    from datetime import datetime, timezone
+
+    import requests
+
+    def seguranca() -> str:
+        if not usuario:
+            return ""
+        nonce = os.urandom(16)
+        criado = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        digest = base64.b64encode(hashlib.sha1(nonce + criado.encode() + senha.encode()).digest()).decode()
+        return (
+            '<s:Header><Security s:mustUnderstand="1" xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">'
+            f'<UsernameToken><Username>{usuario}</Username>'
+            f'<Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest}</Password>'
+            f'<Nonce>{base64.b64encode(nonce).decode()}</Nonce>'
+            f'<Created xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">{criado}</Created>'
+            "</UsernameToken></Security></s:Header>"
+        )
+
+    def chamar(url: str, corpo: str) -> str:
+        envelope = f'<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">{seguranca()}<s:Body>{corpo}</s:Body></s:Envelope>'
+        r = requests.post(url, data=envelope.encode(), headers={"Content-Type": "application/soap+xml; charset=utf-8"}, timeout=timeout)
+        return r.text
+
+    saida: list[str] = []
+    base = f"http://{ip}:{porta}/onvif/device_service"
+    try:
+        caps = chamar(base, '<GetCapabilities xmlns="http://www.onvif.org/ver10/device/wsdl"><Category>Media</Category></GetCapabilities>')
+        achado = re.search(r"<[^>]*XAddr>([^<]+)</", caps)
+        media = achado.group(1) if achado else base
+        media = re.sub(r"^http://[^/]+", f"http://{ip}:{porta}", media)  # a câmera às vezes anuncia o IP errado
+        saida.append(f"serviço de mídia: {media}")
+        perfis = chamar(media, '<GetProfiles xmlns="http://www.onvif.org/ver10/media/wsdl"/>')
+        tokens = re.findall(r'<[^>]*Profiles[^>]*token="([^"]+)"', perfis)
+        codecs = re.findall(r"<[^>]*Encoding>([^<]+)</", perfis)
+        if not tokens:
+            falha = re.search(r"<[^>]*Text[^>]*>([^<]+)</", perfis)
+            return saida + [f"a câmera não listou perfis ({falha.group(1) if falha else perfis[:120].strip()})"]
+        for i, t in enumerate(tokens):
+            uri = chamar(
+                media,
+                '<GetStreamUri xmlns="http://www.onvif.org/ver10/media/wsdl"><StreamSetup>'
+                '<Stream xmlns="http://www.onvif.org/ver10/schema">RTP-Unicast</Stream>'
+                '<Transport xmlns="http://www.onvif.org/ver10/schema"><Protocol>RTSP</Protocol></Transport></StreamSetup>'
+                f"<ProfileToken>{t}</ProfileToken></GetStreamUri>",
+            )
+            u = re.search(r"<[^>]*Uri>([^<]+)</", uri)
+            saida.append(f"perfil {t}" + (f" ({codecs[i]})" if i < len(codecs) else "") + f": {u.group(1) if u else 'sem endereço'}")
+    except Exception as e:
+        saida.append(f"não consegui falar ONVIF em {ip}:{porta} ({type(e).__name__}: {str(e)[:80]})")
+    return saida
+
+
 def cmd_sondar(args):
     """Câmera genérica: testa os caminhos RTSP mais comuns e diz qual devolve imagem."""
     from urllib.parse import quote
@@ -327,6 +386,11 @@ def cmd_sondar(args):
                     break
         except Exception:
             pass
+    if args.onvif:  # pergunta o endereço RTSP à própria câmera
+        print(f"ONVIF em {args.ip}:{args.onvif}:")
+        for linha in _onvif(args.ip, args.onvif, args.usuario, args.senha):
+            print(f"  {linha}")
+        return
     if args.caminho:  # um caminho só: diz o que a câmera responde, se o vídeo chega e se o programa consegue abrir a imagem
         for c in (args.caminho, args.caminho.replace("subtype=1", "subtype=0")) if "subtype=1" in args.caminho else (args.caminho,):
             r = _descrever(args.ip, args.porta, c, args.usuario, args.senha, timeout=6.0)
@@ -717,6 +781,7 @@ def main():
     so.add_argument("usuario", nargs="?", default="")
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
+    so.add_argument("--onvif", type=int, default=0, help="porta ONVIF da câmera (ex.: 5000): pergunta a ela qual é o endereço RTSP")
     so.add_argument("--caminho", default="", help="testa só este caminho RTSP (ex.: /cam/realmonitor?channel=10&subtype=1)")
     so.set_defaults(fn=cmd_sondar)
     ec = sub.add_parser("ensinar-camera", help="ensina um pet pela câmera onde ele está agora")

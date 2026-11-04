@@ -826,3 +826,33 @@ def test_tocar_rtsp():
 
 
 test_tocar_rtsp()
+
+
+def test_onvif():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from pets_agent.__main__ import _onvif
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            corpo = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            if "GetCapabilities" in corpo:
+                r = "<tt:XAddr>http://10.9.9.9:%d/onvif/media</tt:XAddr>" % self.server.server_port
+            elif "GetProfiles" in corpo:
+                r = '<trt:Profiles token="P1"><tt:Encoding>H265</tt:Encoding></trt:Profiles>'
+            else:
+                assert "Username" in corpo and "P1" in corpo
+                r = "<tt:Uri>rtsp://192.168.18.10:8554/ch1</tt:Uri>"
+            self.send_response(200); self.end_headers(); self.wfile.write(r.encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    linhas = _onvif("127.0.0.1", srv.server_port, "igor", "segredo")
+    assert any("rtsp://192.168.18.10:8554/ch1" in l and "H265" in l for l in linhas), linhas
+    print("sondar pergunta o endereço RTSP por ONVIF: ok")
+
+
+test_onvif()
