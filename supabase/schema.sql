@@ -313,4 +313,16 @@ create policy pm_zonas_ler on public.pm_zonas for select to authenticated using 
 drop policy if exists pm_zonas_admin on public.pm_zonas;
 create policy pm_zonas_admin on public.pm_zonas for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- Log do programa de casa (a janela do iniciar.bat) visível no app, só para admin
+create table if not exists public.pm_logs (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  nivel text not null default 'info',
+  linha text not null
+);
+create index if not exists pm_logs_idx on public.pm_logs (created_at desc);
+alter table public.pm_logs enable row level security;
+drop policy if exists pm_logs_ler on public.pm_logs;
+create policy pm_logs_ler on public.pm_logs for select to authenticated using (public.pm_is_admin());
+
 notify pgrst, 'reload schema';

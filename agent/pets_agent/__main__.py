@@ -406,6 +406,10 @@ def cmd_varrer(args):
 
     cfg = config.carregar(args.config)
     db = Supabase()
+    if not args.uma_vez:
+        from . import registro
+
+        registro.instalar(db)  # o que aparece nesta janela também vai para a aba Log do app
     v = Varredura(cfg, db, _detector(cfg))
     if not v.pets:
         print("Aviso: nenhum pet cadastrado. Rode primeiro: python -m pets_agent ensinar")
