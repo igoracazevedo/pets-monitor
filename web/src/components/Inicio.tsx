@@ -4,7 +4,7 @@ import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, typ
 import { useDados } from '../lib/dados'
 import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
-import { exemplo, textoEvento } from '../lib/eventos'
+import { textoEvento } from '../lib/eventos'
 
 type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[]; banheiro: EventoBanheiro[] }
 
@@ -13,7 +13,7 @@ function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[]
   const ultimas = new Map<string, string>()
   for (const e of ev) if (e.snapshot_path && !ultimas.has(`${e.camera_id}|${e.tipo}`)) ultimas.set(`${e.camera_id}|${e.tipo}`, e.snapshot_path)
   const quadros = cams.filter((c) => c.ultimo_quadro_path && (c.ultimo_status === 'erro' || ev.some((e) => e.camera_id === c.id))).map((c) => c.ultimo_quadro_path)
-  const recentes = ev.filter((e) => !exemplo(e)).slice(0, 20).map((e) => e.snapshot_path)
+  const recentes = ev.slice(0, 20).map((e) => e.snapshot_path)
   return [...ultimas.values(), ...quadros, ...recentes]
 }
 
@@ -52,7 +52,7 @@ const lista = (n: string[]) => (n.length > 1 ? `${n.slice(0, -1).join(', ')} e $
 /** Avisos da tela Início: estado do banheiro (desde a última limpeza) e câmeras sem sinal. */
 function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined): Aviso[] {
   const out: Aviso[] = []
-  const ultimo = d.banheiro.find((e) => !exemplo(e))
+  const ultimo = d.banheiro[0]
   if (ultimo) {
     const quem = d.pets.find((p) => p.id === ultimo.pet_id)?.nome
     out.push({ texto: `Último evento: ${textoEvento(ultimo, quem)} em ${dataHora(ultimo.visto_em)}.`, tom: 'ok', foto: ultimo.snapshot_path, quando: ultimo.visto_em, titulo: textoEvento(ultimo, quem) })

@@ -53,7 +53,7 @@ export default function App() {
     <Casca sessao={sessao} abas={abas} aba={aba} onAba={(id) => setAba(id as Aba)}>
       {aba === 'inicio' && <Inicio admin={acesso.admin} onIr={(a) => setAba(a as Aba)} />}
       {aba === 'historico' && <Historico admin={acesso.admin} />}
-      {aba === 'eventos' && <Eventos />}
+      {aba === 'eventos' && <Eventos admin={acesso.admin} />}
       {aba === 'cameras' && <Cameras admin={acesso.admin} />}
       {aba === 'pets' && <Pets admin={acesso.admin} />}
       {aba === 'pessoas' && <Pessoas admin={acesso.admin} />}

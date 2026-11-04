@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { supabase, urlsDasFotos, type Camera, type EventoBanheiro, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora } from '../lib/util'
-import { exemplo, SERIES, textoEvento } from '../lib/eventos'
+import { ensinado, SERIES, textoEvento } from '../lib/eventos'
 import { useVisualizador } from './Visualizador'
 
 type Dados = { eventos: EventoBanheiro[]; pets: Pet[]; cams: Camera[]; fotos: Record<string, string> }
@@ -146,14 +146,14 @@ function Tabela({ cab, linhas }: { cab: string; linhas: Balde[] }) {
   )
 }
 
-export default function Eventos() {
+export default function Eventos({ admin }: { admin: boolean }) {
   const [periodo, setPeriodo] = useState<Periodo>('7d')
   const [tipo, setTipo] = useState<'todos' | EventoBanheiro['tipo']>('todos')
   const [pet, setPet] = useState('todos')
   const [tabela, setTabela] = useState(true) // começa sempre na tabela
   const [quantos, setQuantos] = useState(20)
   const { abrir, janela } = useVisualizador()
-  const { dados, erro, carregando } = useDados<Dados>(
+  const { dados, erro, carregando, recarregar } = useDados<Dados>(
     async () => {
       const [ev, pets, cams] = await Promise.all([
         supabase.from('pm_banheiro_eventos').select('*').gte('visto_em', new Date(Date.now() - 30 * 86400_000).toISOString()).order('visto_em', { ascending: false }).limit(2000),
@@ -161,7 +161,7 @@ export default function Eventos() {
         supabase.from('pm_cameras').select('*'),
       ])
       if (ev.error) throw new Error(ev.error.message)
-      const eventos = ((ev.data ?? []) as EventoBanheiro[]).filter((e) => !exemplo(e))
+      const eventos = (ev.data ?? []) as EventoBanheiro[]
       return { eventos, pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], fotos: await urlsDasFotos(eventos.slice(0, 60).map((e) => e.snapshot_path)) }
     },
     { eventos: [], pets: [], cams: [], fotos: {} },
@@ -170,6 +170,12 @@ export default function Eventos() {
   const ms = PERIODOS.find((p) => p.id === periodo)!.ms
   const noPeriodo = useMemo(() => dados.eventos.filter((e) => Date.now() - new Date(e.visto_em).getTime() < ms), [dados.eventos, ms])
   const filtrados = noPeriodo.filter((e) => (tipo === 'todos' || e.tipo === tipo) && (pet === 'todos' || (pet === 'sem' ? !e.pet_id : e.pet_id === pet)))
+  async function excluir(e: EventoBanheiro) {
+    if (!confirm(`Excluir "${textoEvento(e, dados.pets.find((p) => p.id === e.pet_id)?.nome)}" de ${dataHora(e.visto_em)}?`)) return
+    const { error } = await supabase.from('pm_banheiro_eventos').delete().eq('id', e.id)
+    if (error) alert(`Não consegui excluir: ${error.message}`)
+    await recarregar()
+  }
   const nomePet = (id: string | null) => dados.pets.find((p) => p.id === id)?.nome
 
   const agora = new Date()
@@ -260,9 +266,17 @@ export default function Eventos() {
                   </button>
                 ) : <span className="h-12 w-20 shrink-0 rounded-xl bg-slate-100" />}
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-slate-900">{textoEvento(e, nomePet(e.pet_id))}</p>
+                  <p className="text-[13px] font-semibold text-slate-900">
+                    {textoEvento(e, nomePet(e.pet_id))}
+                    {ensinado(e) && <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">ensinado</span>}
+                  </p>
                   <p className="text-[12px] text-slate-500">{dataHora(e.visto_em)} · {dados.cams.find((c) => c.id === e.camera_id)?.nome ?? ''}</p>
                 </div>
+                {admin && (
+                  <button className="shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-rose-600 ring-1 ring-rose-200" onClick={() => void excluir(e)} aria-label="Excluir evento">
+                    Excluir
+                  </button>
+                )}
               </li>
             ))}
           </ul>
