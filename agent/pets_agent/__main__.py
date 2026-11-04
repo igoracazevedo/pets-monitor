@@ -264,9 +264,12 @@ def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = ""
         tentativas = []
         for alvo in candidatos:
             for transp in ("RTP/AVP/TCP;unicast;interleaved=0-1", "RTP/AVP;unicast;client_port=50000-50001"):
-                st, h, _ = pedir("SETUP", alvo, f"Transport: {transp}\r\n")
+                st, h, corpo = pedir("SETUP", alvo, f"Transport: {transp}\r\n")
                 if " 200" in st:
                     break
+                if not tentativas:
+                    detalhe = " ".join(f"{k}={v}" for k, v in h.items() if k not in ("cseq", "date"))[:160]
+                    tentativas.append(f"[resposta: {detalhe} {corpo.strip()[:80]}]")
                 tentativas.append(f"{st.replace('RTSP/1.0 ', '')} em {alvo.replace(f'rtsp://{ip}', '')} ({transp.split(';')[0][8:]})")
             else:
                 continue
