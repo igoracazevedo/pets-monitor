@@ -290,4 +290,8 @@ create policy pm_banheiro_eventos_ler on public.pm_banheiro_eventos for select t
 drop policy if exists pm_banheiro_eventos_admin on public.pm_banheiro_eventos;
 create policy pm_banheiro_eventos_admin on public.pm_banheiro_eventos for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- Marcar à mão pela aba Câmeras: o admin guarda uma cópia da foto da câmera
+drop policy if exists pm_snapshots_enviar on storage.objects;
+create policy pm_snapshots_enviar on storage.objects for insert to authenticated with check (bucket_id = 'pm-snapshots' and public.pm_is_admin());
+
 notify pgrst, 'reload schema';

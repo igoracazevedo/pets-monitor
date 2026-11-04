@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto, minutosDesde } from '../lib/util'
-import { Visualizador, type ItemFoto } from './Visualizador'
+import { Visualizador, type Caixa, type ItemFoto } from './Visualizador'
 
 const horaCompleta = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
@@ -14,14 +14,14 @@ export default function Cameras({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
   const [batendo, setBatendo] = useState<string | null>(null)
   const [ver, setVer] = useState<number | null>(null)
-  const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string> }>(
+  const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string>; pets: Pet[]; gente: { id: string; nome: string }[] }>(
     async () => {
-      const { data, error } = await supabase.from('pm_cameras').select('*').order('ordem').order('nome')
+      const [{ data, error }, pets, gente] = await Promise.all([supabase.from('pm_cameras').select('*').order('ordem').order('nome'), supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'), supabase.from('pm_pessoas').select('id,nome').order('nome')])
       if (error) throw new Error(error.message)
       const cams = (data ?? []) as Camera[]
-      return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)) }
+      return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)), pets: (pets.data ?? []) as Pet[], gente: (gente.data ?? []) as { id: string; nome: string }[] }
     },
-    { cams: [], fotos: {} },
+    { cams: [], fotos: {}, pets: [], gente: [] },
     15000,
   )
 
@@ -49,6 +49,28 @@ export default function Cameras({ admin }: { admin: boolean }) {
     }
   }
 
+  /** Marca à mão quem está na foto da câmera (o programa não achou sozinho): guarda uma cópia da foto no Histórico e ensina o programa. */
+  async function marcarNaCamera(item: ItemFoto, caixa: Caixa, destino: string) {
+    const cam = item.extra as Camera
+    if (!cam.ultimo_quadro_path) throw new Error('Essa câmera ainda não tem foto.')
+    const [tipo, id] = destino.split(':')
+    const agora = new Date()
+    const dest = `avistamentos/${agora.getFullYear()}/${String(agora.getMonth() + 1).padStart(2, '0')}/${String(agora.getDate()).padStart(2, '0')}/${cam.id.slice(0, 8)}-${agora.toTimeString().slice(0, 8).replace(/:/g, '')}-manual.jpg`
+    const cp = await supabase.storage.from('pm-snapshots').copy(cam.ultimo_quadro_path, dest) // a foto da câmera é sobrescrita a cada varredura; a cópia fica
+    if (cp.error) throw new Error(`Não consegui guardar a foto (${cp.error.message}). Rode o schema.sql de novo no Supabase.`)
+    const pet = tipo === 'pet' ? dados.pets.find((p) => p.id === id) : undefined
+    const box = { x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) }
+    const visto = agora.toISOString()
+    const ins = await supabase.from('pm_avistamentos').insert({ ...box, camera_id: cam.id, snapshot_path: dest, visto_em: visto, confianca: 1, identificacao: 'manual', especie: tipo === 'pessoa' ? 'pessoa' : (pet?.especie ?? 'cachorro'), pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
+    if (ins.error) throw ins.error
+    if (tipo === 'pet') {
+      const up = await supabase.from('pm_ultima_posicao').upsert({ pet_id: id, camera_id: cam.id, visto_em: visto, confianca: 1, ...box, snapshot_path: dest, foto_em: cam.foto_em ?? visto })
+      if (up.error) throw up.error
+    }
+    await supabase.from('pm_correcoes').insert({ camera_id: cam.id, snapshot_path: dest, ...box, pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
+    setMsg(`Pronto: ${tipo === 'pet' ? pet?.nome : dados.gente.find((g) => g.id === id)?.nome} marcado(a) em ${cam.nome}. Aparece no Histórico e na tela Início.`)
+  }
+
   async function salvarApelido(id: string) {
     const nome = apelido.trim()
     if (!nome) return setEditando(null)
@@ -68,7 +90,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   }
   const itens: ItemFoto[] = visiveis.flatMap((c) => {
     const url = urlDe(c)
-    return url ? [{ id: c.id, url, titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
+    return url ? [{ id: c.id, url, extra: c, titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
   })
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
@@ -79,6 +101,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
           indice={ver}
           onIndice={setVer}
           onFechar={() => setVer(null)}
+          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome }))], onMarcar: marcarNaCamera } : undefined}
           acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
         />
       )}
