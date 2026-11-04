@@ -21,11 +21,11 @@ function Avatar({ sessao, grande }: { sessao: Session; grande?: boolean }) {
 }
 
 /** Moldura do app no padrão IAZ: topo colorido com avatar/menu, pílula central e ajuda; folha curvada com atalhos em squircles. */
-export function Casca({ sessao, abas, aba, onAba, children }: { sessao: Session; abas: AbaDef[]; aba: string; onAba: (id: string) => void; children: React.ReactNode }) {
+export function Casca({ sessao, abas, abasTopo = [], aba, onAba, children }: { sessao: Session; abas: AbaDef[]; abasTopo?: AbaDef[]; aba: string; onAba: (id: string) => void; children: React.ReactNode }) {
   const [menu, setMenu] = useState(false)
   const [ajuda, setAjuda] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const atual = abas.find((a) => a.id === aba)
+  const atual = [...abas, ...abasTopo].find((a) => a.id === aba)
   const nome = ((sessao.user.user_metadata ?? {}) as { full_name?: string; name?: string }).full_name ?? sessao.user.email ?? 'Usuário'
 
   useEffect(() => {
@@ -72,7 +72,18 @@ export function Casca({ sessao, abas, aba, onAba, children }: { sessao: Session;
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
+            {abasTopo.map(({ id, nome: rotulo, Icone }) => (
+              <button
+                key={id}
+                onClick={() => onAba(id)}
+                aria-label={rotulo}
+                title={rotulo}
+                className={`rounded-full p-2 transition ${id === aba ? 'bg-white text-[#0e7490]' : 'hover:bg-white/10'}`}
+              >
+                <Icone size={20} strokeWidth={1.9} />
+              </button>
+            ))}
             <button onClick={() => setAjuda(true)} aria-label="Ajuda" className="rounded-full p-2 transition hover:bg-white/10">
               <HelpCircle size={20} strokeWidth={1.9} />
             </button>
