@@ -150,7 +150,7 @@ export default function Eventos() {
   const [periodo, setPeriodo] = useState<Periodo>('7d')
   const [tipo, setTipo] = useState<'todos' | EventoBanheiro['tipo']>('todos')
   const [pet, setPet] = useState('todos')
-  const [tabela, setTabela] = useState(false)
+  const [tabela, setTabela] = useState(true) // começa sempre na tabela
   const [quantos, setQuantos] = useState(20)
   const { abrir, janela } = useVisualizador()
   const { dados, erro, carregando } = useDados<Dados>(

@@ -300,11 +300,13 @@ alter table public.pm_pessoas add column if not exists cor text;
 create table if not exists public.pm_zonas (
   id uuid primary key default gen_random_uuid(),
   camera_id uuid not null references public.pm_cameras(id) on delete cascade,
-  tipo text not null check (tipo in ('banheiro', 'bebedouro', 'cama')),
+  tipo text not null check (tipo in ('banheiro', 'bebedouro', 'comedouro', 'cama')),
   pet_id uuid references public.pm_pets(id) on delete cascade,
   x numeric(5, 4) not null, y numeric(5, 4) not null, w numeric(5, 4) not null, h numeric(5, 4) not null,
   created_at timestamptz not null default now()
 );
+alter table public.pm_zonas drop constraint if exists pm_zonas_tipo_check;
+alter table public.pm_zonas add constraint pm_zonas_tipo_check check (tipo in ('banheiro', 'bebedouro', 'comedouro', 'cama'));
 alter table public.pm_zonas enable row level security;
 drop policy if exists pm_zonas_ler on public.pm_zonas;
 create policy pm_zonas_ler on public.pm_zonas for select to authenticated using (public.pm_is_membro());

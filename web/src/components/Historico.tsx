@@ -141,7 +141,7 @@ export default function Historico({ admin }: { admin: boolean }) {
       await supabase.from('pm_correcoes').insert({ camera_id: a.camera_id, snapshot_path: a.snapshot_path, ...box, pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
     await recarregar()
   }
-  const TIPOS_ZONA = { banheiro: 'Banheiro', bebedouro: 'Bebedouro', cama: 'Cama' } as const
+  const TIPOS_ZONA = { banheiro: 'Banheiro', bebedouro: 'Bebedouro', comedouro: 'Comedouro', cama: 'Cama' } as const
   const corDoPet = (id: string | null) => {
     const i = dados.pets.findIndex((p) => p.id === id)
     return i < 0 ? '#9ca3af' : corValida(dados.pets[i].cor) ? dados.pets[i].cor! : corPadraoPet(i)
