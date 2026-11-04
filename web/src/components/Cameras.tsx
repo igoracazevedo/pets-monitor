@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera, type Pet } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type Pet, type Zona } from '../lib/supabase'
+import { locaisDaCamera, opcoesDeLocais } from '../lib/zonas'
 import { useDados } from '../lib/dados'
 import { haQuanto, minutosDesde } from '../lib/util'
 import { Visualizador, type Caixa, type ItemFoto } from './Visualizador'
@@ -14,14 +15,14 @@ export default function Cameras({ admin }: { admin: boolean }) {
   const [buscando, setBuscando] = useState(false)
   const [batendo, setBatendo] = useState<string | null>(null)
   const [ver, setVer] = useState<number | null>(null)
-  const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string>; pets: Pet[]; gente: { id: string; nome: string }[] }>(
+  const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string>; pets: Pet[]; gente: { id: string; nome: string }[]; zonas: Zona[] }>(
     async () => {
-      const [{ data, error }, pets, gente] = await Promise.all([supabase.from('pm_cameras').select('*').order('ordem').order('nome'), supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'), supabase.from('pm_pessoas').select('id,nome').order('nome')])
+      const [{ data, error }, pets, gente, zonas] = await Promise.all([supabase.from('pm_cameras').select('*').order('ordem').order('nome'), supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'), supabase.from('pm_pessoas').select('id,nome').order('nome'), supabase.from('pm_zonas').select('*')])
       if (error) throw new Error(error.message)
       const cams = (data ?? []) as Camera[]
-      return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)), pets: (pets.data ?? []) as Pet[], gente: (gente.data ?? []) as { id: string; nome: string }[] }
+      return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)), pets: (pets.data ?? []) as Pet[], gente: (gente.data ?? []) as { id: string; nome: string }[], zonas: (zonas.data ?? []) as Zona[] }
     },
-    { cams: [], fotos: {}, pets: [], gente: [] },
+    { cams: [], fotos: {}, pets: [], gente: [], zonas: [] },
     15000,
   )
 
@@ -52,6 +53,14 @@ export default function Cameras({ admin }: { admin: boolean }) {
   /** Marca à mão quem está na foto da câmera (o programa não achou sozinho): guarda uma cópia da foto no Histórico e ensina o programa. */
   async function marcarNaCamera(item: ItemFoto, caixa: Caixa, destino: string) {
     const cam = item.extra as Camera
+    if (destino.startsWith('zona:')) { // marca um local (banheiro, bebedouro, comedouro, cama) nesta câmera
+      const [, t, quem] = destino.split(':')
+      const z = await supabase.from('pm_zonas').insert({ camera_id: cam.id, tipo: t, pet_id: quem === 'todos' ? null : quem, x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) })
+      if (z.error) throw z.error
+      setMsg('Local marcado. Ele aparece nas fotos dessa câmera, aqui e no Histórico.')
+      await recarregar()
+      return
+    }
     if (!cam.ultimo_quadro_path) throw new Error('Essa câmera ainda não tem foto.')
     const [tipo, id] = destino.split(':')
     const agora = new Date()
@@ -90,7 +99,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   }
   const itens: ItemFoto[] = visiveis.flatMap((c) => {
     const url = urlDe(c)
-    return url ? [{ id: c.id, url, extra: c, titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
+    return url ? [{ id: c.id, url, extra: c, locais: locaisDaCamera(dados.pets, dados.zonas, c.id), titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
   })
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
   return (
@@ -101,7 +110,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
           indice={ver}
           onIndice={setVer}
           onFechar={() => setVer(null)}
-          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome }))], onMarcar: marcarNaCamera } : undefined}
+          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome, grupo: 'Quem é' })), ...opcoesDeLocais(dados.pets)], onMarcar: marcarNaCamera } : undefined}
           acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
         />
       )}
