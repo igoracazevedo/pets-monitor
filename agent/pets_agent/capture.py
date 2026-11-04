@@ -17,8 +17,30 @@ _LIMITES = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC
 _LIMITES_LONGOS = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 20000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 20000]
 
 
+_OPCOES = "|timeout;5000000|stimeout;5000000"
+_transporte: dict[str, str] = {}  # url -> "tcp" ou "udp": o que funcionou da última vez
+_trava_abrir = threading.Lock()
+
+
+def _abrir(url: str, limites: list) -> "cv2.VideoCapture":
+    """Abre o RTSP por TCP e, se a câmera recusar (algumas respondem outro transporte no SETUP), tenta UDP. Lembra o que funcionou."""
+    ordem = ["tcp", "udp"]
+    if _transporte.get(url) == "udp":
+        ordem.reverse()
+    cap = None
+    for t in ordem:
+        with _trava_abrir:  # a opção do ffmpeg é global: só uma abertura por vez
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{t}{_OPCOES}"
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, limites)
+        if cap.isOpened():
+            _transporte[url] = t
+            return cap
+        cap.release()
+    return cv2.VideoCapture()  # fechado: quem chama trata como "não conectou"
+
+
 def _rtsp(url: str, descartar: int = 5) -> np.ndarray:
-    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, _LIMITES)
+    cap = _abrir(url, _LIMITES)
     try:
         if not cap.isOpened():
             raise RuntimeError("não conectou (confira IP, usuário/senha e se o RTSP está ativado na câmera)")
@@ -91,7 +113,7 @@ class _Fluxo(threading.Thread):
 
     def run(self):
         while True:
-            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG, _LIMITES_LONGOS)
+            cap = _abrir(self.url, _LIMITES_LONGOS)
             if not cap.isOpened():
                 self.erro = "não conectou (confira IP, porta, usuário/senha da 'Conta da câmera' e o caminho RTSP)"
                 time.sleep(5)
