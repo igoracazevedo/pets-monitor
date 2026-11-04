@@ -24,13 +24,16 @@ _trava_abrir = threading.Lock()
 
 def _abrir(url: str, limites: list) -> "cv2.VideoCapture":
     """Abre o RTSP por TCP e, se a câmera recusar (algumas respondem outro transporte no SETUP), tenta UDP. Lembra o que funcionou."""
-    ordem = ["tcp", "udp"]
-    if _transporte.get(url) == "udp":
-        ordem.reverse()
+    ordem = ["tcp", "udp", "prefer_tcp"]  # prefer_tcp: deixa a câmera escolher (Yoosee e parecidas respondem outro transporte)
+    lembrado = _transporte.get(url)
+    if lembrado in ordem:
+        ordem.remove(lembrado)
+        ordem.insert(0, lembrado)
     cap = None
     for t in ordem:
         with _trava_abrir:  # a opção do ffmpeg é global: só uma abertura por vez
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{t}{_OPCOES}"
+            base = "rtsp_flags;prefer_tcp" if t == "prefer_tcp" else f"rtsp_transport;{t}"
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = base + _OPCOES
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, limites)
         if cap.isOpened():
             _transporte[url] = t
