@@ -82,7 +82,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
           acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
         />
       )}
-      <button className="pilula" disabled={buscando} onClick={() => void pedirFotos()}>
+      <button className="botao-principal w-full sm:w-auto" disabled={buscando} onClick={() => void pedirFotos()}>
         <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
       </button>
       {msg && <p className="text-sm text-rose-600">{msg}</p>}

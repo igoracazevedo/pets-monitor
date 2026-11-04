@@ -19,7 +19,7 @@ async function carregar(): Promise<Dados> {
       .neq('especie', 'pessoa')
       .gte('visto_em', new Date(Date.now() - 3600_000).toISOString()),
     supabase.from('pm_presenca').select('*'),
-    supabase.from('pm_banheiro_eventos').select('*').gte('visto_em', new Date(Date.now() - 86400_000).toISOString()).order('visto_em', { ascending: false }).limit(30),
+    supabase.from('pm_banheiro_eventos').select('*').gte('visto_em', new Date(Date.now() - 7 * 86400_000).toISOString()).order('visto_em', { ascending: false }).limit(80),
   ])
   if (pets.error) throw new Error(pets.error.message)
   const p = (pos.data ?? []) as Posicao[]
@@ -29,11 +29,35 @@ async function carregar(): Promise<Dados> {
     pos: p,
     cams: (cams.data ?? []) as Camera[],
     banheiro: (banheiro.data ?? []) as EventoBanheiro[],
-    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path), ...((banheiro.data ?? []) as EventoBanheiro[]).slice(0, 6).map((b) => b.snapshot_path)]),
+    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path), ...((banheiro.data ?? []) as EventoBanheiro[]).filter((b) => b.tipo !== 'limpo').slice(0, 6).map((b) => b.snapshot_path)]),
     gente,
     perfis: await urlsDosPets(((pets.data ?? []) as Pet[]).map((x) => x.foto_perfil_path)),
     desconhecidos: desc.count ?? 0,
   }
+}
+
+type Aviso = { texto: string; tom: 'ok' | 'alerta' | 'erro' }
+const lista = (n: string[]) => (n.length > 1 ? `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}` : (n[0] ?? ''))
+
+/** Avisos da tela Início: estado do banheiro (desde a última limpeza) e câmeras sem sinal. */
+function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined): Aviso[] {
+  const out: Aviso[] = []
+  const porCamera = new Map<string, EventoBanheiro[]>()
+  for (const e of d.banheiro) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
+  for (const [cid, evs] of porCamera) {
+    const nome = cam(cid)?.nome ?? 'Banheiro'
+    const iLimpo = evs.findIndex((e) => e.tipo === 'limpo') // eventos vêm do mais novo para o mais antigo
+    const sujos = iLimpo < 0 ? evs : evs.slice(0, iLimpo)
+    if (sujos.length === 0) {
+      if (evs[0]) out.push({ texto: `${nome}: limpo desde ${dataHora(evs[0].visto_em)}.`, tom: 'ok' })
+      continue
+    }
+    const tipos = ['xixi', 'coco'].filter((t) => sujos.some((e) => e.tipo === t)).map((t) => (t === 'coco' ? 'cocô' : 'xixi'))
+    const quem = [...new Set(sujos.map((e) => d.pets.find((p) => p.id === e.pet_id)?.nome).filter((n): n is string => !!n))]
+    out.push({ texto: `${nome}: sujo de ${tipos.join(' e ')}${quem.length ? `, feito por ${lista(quem)}` : ', não sei quem fez'}. Último às ${dataHora(sujos[0].visto_em)}.`, tom: 'alerta' })
+  }
+  for (const c of d.cams) if (c.ativo && c.ultimo_status === 'erro') out.push({ texto: `Câmera ${c.nome} sem sinal${c.ultima_leitura ? ` desde ${dataHora(c.ultima_leitura)}` : ''}.`, tom: 'erro' })
+  return out
 }
 
 export default function Inicio({ admin }: { admin: boolean }) {
@@ -158,6 +182,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
   }
 
   const cam = (id: string | null) => dados.cams.find((c) => c.id === id)
+  const avisos = montarAvisos(dados, cam)
   return (
     <div className="space-y-4">
       {janela}
@@ -179,24 +204,14 @@ export default function Inicio({ admin }: { admin: boolean }) {
         </div>
         {resposta && <p className="text-[13px] text-slate-600">{resposta}</p>}
       </form>
-      {dados.banheiro.length > 0 && (
+      {avisos.length > 0 && (
         <div className="vidro space-y-2 p-3">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Banheiro (últimas 24 h)</p>
-          <p className="text-[13px] text-slate-700">
-            {dados.banheiro.filter((b) => b.tipo === 'xixi').length} xixi · {dados.banheiro.filter((b) => b.tipo === 'coco').length} coco
-          </p>
-          <ul className="divide-y divide-slate-200/70">
-            {dados.banheiro.slice(0, 6).map((b) => (
-              <li key={b.id} className="flex items-center gap-3 py-2">
-                {b.snapshot_path && dados.fotos[b.snapshot_path] && <img src={dados.fotos[b.snapshot_path]} alt="" className="h-10 w-16 rounded-lg object-cover" />}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-semibold text-slate-900">
-                    {b.tipo === 'coco' ? 'Coco' : 'Xixi'} · {dados.pets.find((p) => p.id === b.pet_id)?.nome ?? 'não sei quem'}
-                  </p>
-                  <p className="text-[12px] text-slate-500">
-                    {cam(b.camera_id)?.nome ?? '—'} · {dataHora(b.visto_em)}
-                  </p>
-                </div>
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Avisos</p>
+          <ul className="space-y-1.5">
+            {avisos.map((a, k) => (
+              <li key={k} className="flex items-start gap-2 text-[13px] text-slate-800">
+                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${a.tom === 'alerta' ? 'bg-amber-500' : a.tom === 'erro' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                <span>{a.texto}</span>
               </li>
             ))}
           </ul>

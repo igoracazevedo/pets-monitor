@@ -334,7 +334,10 @@ class Varredura:
         if rot == "desconhecido" or rot == antes:
             return
         self.estado_banheiro[cid] = rot
-        if antes is None or rot == "limpo":  # primeira leitura depois de ligar: só anota o estado
+        if antes is None:  # primeira leitura depois de ligar: só anota o estado
+            return
+        if rot == "limpo":  # alguém limpou: o aviso da tela Início volta a "limpo"
+            self.db.evento_banheiro({"camera_id": cid, "tipo": "limpo", "visto_em": agora()})
             return
         pet = None
         for pid, ref in self.ultimo.items():  # quem estava por ali nos últimos 15 minutos
@@ -359,7 +362,8 @@ class Varredura:
             return "câmera não encontrada"
         cfg_cam, reg = alvo
         frame = capture.capturar(cfg_cam)
-        self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame), lambda f: _jpeg(f, self.cfg["largura_foto"]))
+        caminho = self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame), lambda f: _jpeg(f, self.cfg["largura_foto"]))
+        self.db.evento_banheiro({"camera_id": camera_id, "tipo": rotulo, "snapshot_path": caminho, "visto_em": agora()})  # o estado atual do tapete aparece nos avisos
         self.estado_banheiro[camera_id] = rotulo  # o que já está lá não conta como evento novo
         c = self.banheiro.cache.get(camera_id) or {}
         n = {r: sum(1 for x, _ in c.get("exemplos", []) if x == r) for r in ("limpo", "xixi", "coco")}
