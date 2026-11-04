@@ -4,14 +4,9 @@ import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, typ
 import { useDados } from '../lib/dados'
 import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
+import { exemplo, textoEvento } from '../lib/eventos'
 
 type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[]; banheiro: EventoBanheiro[] }
-
-/** Exemplos ensinados pelo comando ("xixi no Banheiro") ficam em banheiro/ e não são ocorrências de verdade. */
-const exemplo = (e: EventoBanheiro) => !!e.snapshot_path?.startsWith('banheiro/')
-const TEXTO_EVENTO = { xixi: 'fez xixi', coco: 'fez cocô', agua: 'bebeu água' } as const
-const textoEvento = (e: EventoBanheiro, nome: string | undefined) =>
-  e.tipo === 'limpo' ? 'Tapete limpo' : nome ? `${nome} ${TEXTO_EVENTO[e.tipo]}` : e.tipo === 'agua' ? 'Uma das cachorras bebeu água' : `${e.tipo === 'coco' ? 'Cocô' : 'Xixi'} (não sei quem fez)`
 
 /** Fotos que ilustram os avisos: a mais recente de cada câmera do banheiro e o último quadro das câmeras sem sinal. */
 function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[] {
@@ -57,6 +52,11 @@ const lista = (n: string[]) => (n.length > 1 ? `${n.slice(0, -1).join(', ')} e $
 /** Avisos da tela Início: estado do banheiro (desde a última limpeza) e câmeras sem sinal. */
 function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined): Aviso[] {
   const out: Aviso[] = []
+  const ultimo = d.banheiro.find((e) => !exemplo(e))
+  if (ultimo) {
+    const quem = d.pets.find((p) => p.id === ultimo.pet_id)?.nome
+    out.push({ texto: `Último evento: ${textoEvento(ultimo, quem)} em ${dataHora(ultimo.visto_em)}.`, tom: 'ok', foto: ultimo.snapshot_path, quando: ultimo.visto_em, titulo: textoEvento(ultimo, quem) })
+  }
   const porCamera = new Map<string, EventoBanheiro[]>()
   for (const e of d.banheiro.filter((x) => x.tipo !== 'agua')) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
   for (const [cid, evs] of porCamera) {
@@ -80,7 +80,7 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
   return out
 }
 
-export default function Inicio({ admin }: { admin: boolean }) {
+export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: string) => void }) {
   const [buscando, setBuscando] = useState(false)
   const [texto, setTexto] = useState('')
   const [comandando, setComandando] = useState(false)
@@ -287,6 +287,28 @@ export default function Inicio({ admin }: { admin: boolean }) {
           </ul>
         </div>
       )}
+      <section className="vidro p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-bold text-slate-900">Demais eventos</h2>
+          {onIr && (
+            <button className="text-[12px] font-semibold text-cyan-800" onClick={() => onIr('eventos')}>
+              Gráficos e todos os eventos →
+            </button>
+          )}
+        </div>
+        {reais.length <= 1 ? (
+          <p className="pt-1 text-sm text-slate-500">Nenhum outro evento ainda.</p>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-200/70">{reais.slice(1, verTodos ? 21 : 6).map(linhaEvento)}</ul>
+            {reais.length > 6 && (
+              <button className="mt-1 text-[12px] font-semibold text-cyan-800" onClick={() => setVerTodos(!verTodos)}>
+                {verTodos ? 'Ver menos' : 'Ver mais'}
+              </button>
+            )}
+          </>
+        )}
+      </section>
       <section className="vidro space-y-2 p-4">
         <h2 className="font-bold text-slate-900">Banheiro · últimas 24 h</h2>
         <div className="grid grid-cols-4 gap-2 text-center">
@@ -310,21 +332,6 @@ export default function Inicio({ admin }: { admin: boolean }) {
               </li>
             ))}
           </ul>
-        )}
-      </section>
-      <section className="vidro p-4">
-        <h2 className="font-bold text-slate-900">Eventos do banheiro</h2>
-        {reais.length === 0 ? (
-          <p className="pt-1 text-sm text-slate-500">Nenhum evento ainda.</p>
-        ) : (
-          <>
-            <ul className="divide-y divide-slate-200/70">{(verTodos ? reais.slice(0, 20) : reais.slice(0, 1)).map(linhaEvento)}</ul>
-            {reais.length > 1 && (
-              <button className="mt-1 text-[12px] font-semibold text-cyan-800" onClick={() => setVerTodos(!verTodos)}>
-                {verTodos ? 'Recolher' : `Ver anteriores (${Math.min(reais.length, 20) - 1})`}
-              </button>
-            )}
-          </>
         )}
       </section>
       <div className="grid gap-4 sm:grid-cols-2">
