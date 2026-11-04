@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera, type ObjetoCatalogo, type Pet, type Zona } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto } from '../lib/util'
@@ -25,20 +27,36 @@ async function carregar(): Promise<Dados> {
 }
 
 /** Catálogo: cada objeto marcado de cada pet, com a aparência aprendida e onde está agora (acompanha mudança de lugar e de câmera). */
-export default function Catalogo() {
-  const { dados, carregando } = useDados<Dados>(carregar, { objetos: [], zonas: [], pets: [], cams: {}, fotos: {}, semTabela: false }, 30000)
+export default function Catalogo({ admin }: { admin: boolean }) {
+  const { dados, carregando, recarregar } = useDados<Dados>(carregar, { objetos: [], zonas: [], pets: [], cams: {}, fotos: {}, semTabela: false }, 30000)
   const { abrir, janela } = useVisualizador()
   if (carregando) return <p className="py-8 text-center text-slate-400">Carregando…</p>
   if (dados.semTabela) return <p className="vidro p-4 text-sm text-slate-600">A tabela do catálogo ainda não existe: rode o trecho SQL do catálogo no Supabase.</p>
   const grupos = [...dados.pets.map((p) => ({ id: p.id as string | null, nome: p.nome })), { id: null as string | null, nome: 'Sem dono' }]
   const zonaDe = (id: string) => dados.zonas.find((z) => z.id === id)
+  const donoDe = (o: ObjetoCatalogo) => (zonaDe(o.zona_id) ? zonaDe(o.zona_id)!.pet_id : o.pet_id) // vale o que está no local marcado: é onde você troca o dono
+  const [erro, setErro] = useState('')
+
+  async function definirDono(o: ObjetoCatalogo, petId: string) {
+    setErro('')
+    const { error } = await supabase.from('pm_zonas').update({ pet_id: petId || null }).eq('id', o.zona_id)
+    if (error) setErro(error.message)
+    else void recarregar()
+  }
+  async function apagar(o: ObjetoCatalogo) {
+    if (!window.confirm(`Apagar este ${NOME[o.tipo]?.toLowerCase() ?? 'objeto'} do catálogo? O local marcado nas fotos também some.`)) return
+    setErro('')
+    const { error } = await supabase.from('pm_zonas').delete().eq('id', o.zona_id) // o objeto do catálogo sai junto
+    if (error) setErro(error.message)
+    else void recarregar()
+  }
   return (
     <div className="space-y-4">
       {dados.objetos.length === 0 && (
         <p className="vidro p-5 text-center text-sm text-slate-500">Nenhum objeto ainda. Marque o bebedouro, comedouro, banheiro ou cama de cada pet nas fotos (Histórico ou Câmeras) e o programa de casa aprende a aparência de cada um em alguns minutos.</p>
       )}
       {grupos.map((g) => {
-        const lista = dados.objetos.filter((o) => o.pet_id === g.id)
+        const lista = dados.objetos.filter((o) => donoDe(o) === g.id)
         if (lista.length === 0) return null
         return (
           <section key={g.id ?? 'sem'} className="vidro space-y-3 p-4">
@@ -64,7 +82,20 @@ export default function Catalogo() {
                         {mudou && !o.sumido && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">mudou de câmera</span>}
                       </p>
                       {o.visto_em && <p className="text-[11px] text-slate-400">conferido {haQuanto(o.visto_em)}</p>}
+                      {admin && g.id === null && (
+                        <select className="mt-1 w-full max-w-[220px] text-[13px]" value="" onChange={(e) => void definirDono(o, e.target.value)} aria-label="De quem é?">
+                          <option value="">De quem é?</option>
+                          {dados.pets.map((p) => (
+                            <option key={p.id} value={p.id}>{p.nome}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
+                    {admin && (
+                      <button onClick={() => void apagar(o)} className="shrink-0 rounded-full p-2 text-rose-600 hover:bg-rose-50" aria-label="Apagar objeto" title="Apagar">
+                        <Trash2 size={18} strokeWidth={1.9} />
+                      </button>
+                    )}
                   </li>
                 )
               })}
@@ -72,6 +103,7 @@ export default function Catalogo() {
           </section>
         )
       })}
+      {erro && <p className="text-sm text-rose-600">{erro}</p>}
       <p className="text-center text-[11px] text-slate-400">Se a miniatura estiver errada, apague o local na foto e marque de novo: ele aprende outra vez.</p>
       {janela}
     </div>

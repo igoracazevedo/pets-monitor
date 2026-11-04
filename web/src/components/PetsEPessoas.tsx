@@ -19,7 +19,7 @@ export default function PetsEPessoas({ admin }: { admin: boolean }) {
           </button>
         ))}
       </div>
-      {parte === 'pets' ? <Pets admin={admin} /> : parte === 'pessoas' ? <Pessoas admin={admin} /> : <Catalogo />}
+      {parte === 'pets' ? <Pets admin={admin} /> : parte === 'pessoas' ? <Pessoas admin={admin} /> : <Catalogo admin={admin} />}
     </div>
   )
 }

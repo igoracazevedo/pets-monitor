@@ -143,7 +143,9 @@ class Catalogo:
                 vistos.add(zid)
                 box0 = (float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"]))
                 o = self.objetos.get(zid)
-                if o and (o.tipo != z["tipo"] or o.pet_id != z.get("pet_id") or _iou(o.box0, box0) < 0.9):
+                if o:
+                    o.pet_id = z.get("pet_id")  # trocar o dono não muda a aparência: não precisa aprender de novo
+                if o and (o.tipo != z["tipo"] or _iou(o.box0, box0) < 0.9):
                     del self.objetos[zid]  # você redesenhou/trocou o local: aprende de novo
                     o = None
                     for f in (self.pasta / f"{zid}.jpg", self.pasta / f"{zid}-noite.jpg"):
