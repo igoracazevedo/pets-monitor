@@ -13,6 +13,7 @@ from .detect import _iou
 from .identify import Identificador, Palpite, caracteristica
 from .privacidade import desfocar_pessoas
 from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
+from .catalogo import cobertura
 from .store import Supabase, agora
 
 
@@ -441,12 +442,19 @@ class Varredura:
     def camera_rapida(self, cid: str, nome: str) -> bool:
         return self._vigia_eventos(cid, nome)
 
-    def _alvos(self, cid: str, tipo: str) -> list[tuple[float, float, float, float]]:
-        """Onde estão (x, y, largura, altura de 0 a 1) os bebedouros/comedouros nesta câmera: do catálogo (onde estiverem agora) ou, sem catálogo, os locais marcados."""
+    def _alvos(self, cid: str, tipo: str) -> list[tuple]:
+        """Onde estão (x, y, largura, altura de 0 a 1 [+ contorno livre]) os bebedouros/comedouros nesta câmera: do catálogo (onde estiverem agora) ou, sem catálogo, os locais marcados."""
         cat = getattr(self, "catalogo", None)
         if cat and cat.tem_tipo(tipo):
-            return [tuple(b) for b in cat.caixas(cid, tipo)]
-        return [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == tipo]
+            return cat.alvos(cid, tipo)
+        saida = []
+        for z in getattr(self, "zonas", {}).get(cid, []):
+            if z.get("tipo") != tipo:
+                continue
+            x, y, w, h = float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])
+            pol = z.get("poligono")
+            saida.append((x, y, w, h, [((float(a) - x) / w, (float(b) - y) / h) for a, b in pol]) if pol and len(pol) >= 3 and w > 0 and h > 0 else (x, y, w, h))
+        return saida
 
     def vigiar_agua(self, cid: str, nome: str, frame, achados, quando: float | None = None):
         """Bicho com o corpo em cima da vasilha de água (marcada no app e acompanhada pelo catálogo) = bebeu água."""
@@ -490,7 +498,7 @@ class Varredura:
             if d.especie == "pessoa":
                 continue
             x1, y1, x2, y2 = (d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h)
-            if not any(max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy)) >= 0.35 * zw * zh for zx, zy, zw, zh in lista):
+            if not any(cobertura(z, (x1, y1, x2, y2)) >= 0.35 for z in lista):
                 continue
             chave = f"{tipo}:{p.pet_id or '?' + cid}"
             if abs(t - ultima.get(chave, 0)) < intervalo:

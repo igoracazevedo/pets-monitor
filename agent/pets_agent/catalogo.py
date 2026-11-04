@@ -34,8 +34,36 @@ def _cinza(img: np.ndarray) -> np.ndarray:
     return cv2.createCLAHE(2.0, (4, 4)).apply(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
 
 
-def _hist(img: np.ndarray) -> np.ndarray:
-    h = cv2.calcHist([cv2.cvtColor(img, cv2.COLOR_BGR2HSV)], [0, 1], None, [18, 16], [0, 180, 0, 256])
+def mascara(poly_rel, forma) -> np.ndarray | None:
+    """Máscara (255 dentro) do contorno livre, em pontos relativos (0 a 1) ao retângulo do objeto. None = retângulo inteiro."""
+    if not poly_rel or len(poly_rel) < 3:
+        return None
+    h, w = forma[:2]
+    m = np.zeros((h, w), np.uint8)
+    pts = np.array([[min(w - 1, max(0, round(x * (w - 1)))), min(h - 1, max(0, round(y * (h - 1))))] for x, y in poly_rel], np.int32)
+    cv2.fillPoly(m, [pts], 255)
+    return m if m.sum() > 0 else None
+
+
+def cobertura(zona: tuple, animal: tuple) -> float:
+    """Que parte da zona (x, y, w, h[, contorno relativo]) está coberta pela caixa do animal (x1, y1, x2, y2 de 0 a 1)?"""
+    zx, zy, zw, zh = zona[:4]
+    ax1, ay1, ax2, ay2 = animal
+    poly = zona[4] if len(zona) > 4 else None
+    if not poly:
+        return max(0.0, min(ax2, zx + zw) - max(ax1, zx)) * max(0.0, min(ay2, zy + zh) - max(ay1, zy)) / max(1e-9, zw * zh)
+    m = mascara(poly, (48, 48))
+    if m is None:
+        return 0.0
+    c1, c2 = max(0, int((ax1 - zx) / zw * 48)), min(48, int(np.ceil((ax2 - zx) / zw * 48)))
+    r1, r2 = max(0, int((ay1 - zy) / zh * 48)), min(48, int(np.ceil((ay2 - zy) / zh * 48)))
+    if c2 <= c1 or r2 <= r1:
+        return 0.0
+    return float((m[r1:r2, c1:c2] > 0).sum()) / float((m > 0).sum())
+
+
+def _hist(img: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
+    h = cv2.calcHist([cv2.cvtColor(img, cv2.COLOR_BGR2HSV)], [0, 1], mask, [18, 16], [0, 180, 0, 256])
     cv2.normalize(h, h, 0, 1, cv2.NORM_MINMAX)
     return h
 
@@ -45,10 +73,12 @@ class Modelo:
     """Aparência de um objeto: contraste (vale de dia e à noite) e cor (só de dia)."""
     cinza: np.ndarray
     hist: np.ndarray | None
+    mask: np.ndarray | None = None  # contorno livre: só estes pontos contam na comparação
 
     @staticmethod
-    def de(recorte: np.ndarray, noite: bool) -> "Modelo":
-        return Modelo(_cinza(recorte), None if noite else _hist(recorte))
+    def de(recorte: np.ndarray, noite: bool, poly_rel=None) -> "Modelo":
+        m = mascara(poly_rel, recorte.shape)
+        return Modelo(_cinza(recorte), None if noite else _hist(recorte, m), m)
 
 
 def procurar(cinza: np.ndarray, peq: np.ndarray, modelo: Modelo, janela=None, noite: bool = False):
@@ -69,7 +99,15 @@ def procurar(cinza: np.ndarray, peq: np.ndarray, modelo: Modelo, janela=None, no
         if tw < 12 or th < 12 or tw >= reg.shape[1] or th >= reg.shape[0]:
             continue
         t = cv2.resize(modelo.cinza, (tw, th), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
-        _, mx, _, loc = cv2.minMaxLoc(cv2.matchTemplate(reg, t, cv2.TM_CCOEFF_NORMED))
+        res = None
+        if modelo.mask is not None:
+            try:  # só os pontos dentro do contorno livre contam (nem todo opencv aceita máscara aqui: cai para o retângulo)
+                res = cv2.matchTemplate(reg, t, cv2.TM_CCOEFF_NORMED, mask=cv2.resize(modelo.mask, (tw, th), interpolation=cv2.INTER_NEAREST))
+            except cv2.error:
+                res = None
+        if res is None:
+            res = cv2.matchTemplate(reg, t, cv2.TM_CCOEFF_NORMED)
+        _, mx, _, loc = cv2.minMaxLoc(np.nan_to_num(res, nan=0.0, posinf=0.0, neginf=0.0))
         if mx > melhor:
             melhor, caixa = float(mx), (x0 + loc[0], y0 + loc[1], tw, th)
     if caixa is None:
@@ -77,7 +115,8 @@ def procurar(cinza: np.ndarray, peq: np.ndarray, modelo: Modelo, janela=None, no
     x, y, w, h = caixa
     nota = melhor
     if modelo.hist is not None and not noite:
-        cor = max(0.0, float(cv2.compareHist(modelo.hist, _hist(peq[y : y + h, x : x + w]), cv2.HISTCMP_CORREL)))
+        mk = cv2.resize(modelo.mask, (w, h), interpolation=cv2.INTER_NEAREST) if modelo.mask is not None else None
+        cor = max(0.0, float(cv2.compareHist(modelo.hist, _hist(peq[y : y + h, x : x + w], mk), cv2.HISTCMP_CORREL)))
         nota = 0.7 * melhor + 0.3 * cor
     return nota, (x / W, y / H, w / W, h / H)
 
@@ -112,6 +151,7 @@ class Objeto:
     buscou: dict = field(default_factory=dict)
     gravado: float = 0.0
     imagem: str | None = None           # recorte guardado no banco
+    poly: list | None = None            # contorno livre, em pontos relativos ao retângulo do objeto
 
 
 class Catalogo:
@@ -129,9 +169,9 @@ class Catalogo:
         pet = self.nome_pet(o.pet_id) if o.pet_id else None
         return f"{TIPOS.get(o.tipo, o.tipo)} {'da ' + pet if pet else ''}".strip()
 
-    def _carregar_modelo(self, caminho: Path, noite: bool) -> Modelo | None:
+    def _carregar_modelo(self, caminho: Path, noite: bool, poly=None) -> Modelo | None:
         img = cv2.imread(str(caminho)) if caminho.exists() else None
-        return Modelo.de(img, noite) if img is not None else None
+        return Modelo.de(img, noite, poly) if img is not None else None
 
     def sincronizar(self, linhas: list[dict]):
         """Os objetos vêm da tabela pm_objetos (criados ao marcar um local no app). Continuam existindo mesmo que o desenho na foto seja apagado:
@@ -150,8 +190,11 @@ class Catalogo:
             home = r.get("camera_origem") or r.get("camera_id")
             o = Objeto(oid, r.get("pet_id"), r["tipo"], home, box, cam=r.get("camera_id") or home, box=box)
             o.sumido = bool(r.get("sumido"))
+            pol = r.get("poligono")
+            if pol and len(pol) >= 3 and box[2] > 0 and box[3] > 0:  # contorno livre desenhado no app: guarda relativo ao retângulo que o envolve
+                o.poly = [((float(px) - box[0]) / box[2], (float(py) - box[1]) / box[3]) for px, py in pol]
             o.dia = self._modelo_do_banco(o, r)
-            o.noite = self._carregar_modelo(self.pasta / f"{oid}-noite.jpg", True)
+            o.noite = self._carregar_modelo(self.pasta / f"{oid}-noite.jpg", True, o.poly)
             self.objetos[oid] = o
         for oid in [k for k in self.objetos if k not in vistos]:
             del self.objetos[oid]
@@ -172,7 +215,7 @@ class Catalogo:
                     cv2.imwrite(str(local), img)
             except Exception as e:
                 print(f"  catálogo: não consegui baixar o recorte de {self.rotulo(o)} ({e})", flush=True)
-        return self._carregar_modelo(local, False)
+        return self._carregar_modelo(local, False, o.poly)
 
     def tem_tipo(self, tipo: str) -> bool:
         return any(o.tipo == tipo for o in self.objetos.values())
@@ -180,6 +223,10 @@ class Catalogo:
     def caixas(self, cid: str, tipo: str) -> list[tuple]:
         """Onde está agora cada objeto desse tipo, na câmera `cid` (x, y, w, h de 0 a 1)."""
         return [o.box for o in self.objetos.values() if o.tipo == tipo and o.cam == cid and not o.sumido]
+
+    def alvos(self, cid: str, tipo: str) -> list[tuple]:
+        """Como `caixas`, mas com o contorno livre (relativo) quando houver: (x, y, w, h) ou (x, y, w, h, contorno)."""
+        return [(*o.box, o.poly) if o.poly else tuple(o.box) for o in self.objetos.values() if o.tipo == tipo and o.cam == cid and not o.sumido]
 
     def tem_na_camera(self, cid: str) -> bool:
         return any(o.cam == cid and o.tipo in ("bebedouro", "comedouro", "banheiro") and not o.sumido for o in self.objetos.values())
@@ -201,10 +248,10 @@ class Catalogo:
             if recorte.shape[0] < 14 or recorte.shape[1] < 14:
                 continue
             if noite:
-                o.noite = Modelo.de(recorte, True)
+                o.noite = Modelo.de(recorte, True, o.poly)
                 cv2.imwrite(str(self.pasta / f"{o.id}-noite.jpg"), recorte)
                 continue
-            o.dia = Modelo.de(recorte, False)
+            o.dia = Modelo.de(recorte, False, o.poly)
             cv2.imwrite(str(self.pasta / f"{o.id}.jpg"), recorte)
             o.gravado = 0.0
             print(f"  [catálogo] aprendi o {self.rotulo(o)} ({self.nome_camera(cid)})", flush=True)

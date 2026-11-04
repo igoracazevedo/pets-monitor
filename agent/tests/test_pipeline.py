@@ -687,3 +687,54 @@ def test_buffer_e_segunda_leitura():
 from datetime import datetime
 
 test_buffer_e_segunda_leitura()
+
+
+def test_contorno_livre():
+    from pets_agent.catalogo import Catalogo, cobertura, mascara
+    from pets_agent import varredura as V
+
+    # triângulo no canto superior esquerdo do retângulo: o canto de baixo à direita está FORA do objeto
+    tri = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
+    zona = (0.2, 0.2, 0.2, 0.2, tri)
+    assert cobertura(zona, (0.2, 0.2, 0.4, 0.4)) > 0.99                        # cobre tudo
+    assert cobertura(zona, (0.33, 0.33, 0.4, 0.4)) < 0.05                      # só o canto de fora: não conta
+    assert cobertura((0.2, 0.2, 0.2, 0.2), (0.33, 0.33, 0.4, 0.4)) > 0.1      # no retângulo, esse canto contaria
+    m = mascara(tri, (40, 60))
+    assert m[2, 2] == 255 and m[37, 55] == 0
+
+    class Pal: pet_id = "p1"
+    class DB:
+        l = []
+        def enviar_foto(s, c, b): pass
+        def evento_banheiro(s, r): s.l.append(r)
+    v = V.Varredura.__new__(V.Varredura)
+    v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}; v.caixa_agua = {}
+    v.pets = [{"id": "p1", "nome": "Mavi"}]
+    # vasilha marcada com contorno livre: [x, y] absolutos (0 a 1); o bicho no canto vazio do retângulo não bebeu
+    v.zonas = {"c": [{"tipo": "bebedouro", "x": 0.2, "y": 0.2, "w": 0.2, "h": 0.2, "poligono": [[0.2, 0.2], [0.4, 0.2], [0.2, 0.4]]}]}
+    f = np.zeros((200, 200, 3), np.uint8)
+    v.vigiar_agua("c", "Sala", f, [(Deteccao("dog", 0.9, (68, 68, 150, 150)), Pal())])  # só o canto de fora (0.34-0.75)
+    assert not v.db.l
+    v.vigiar_agua("c", "Sala", f, [(Deteccao("dog", 0.9, (40, 40, 90, 90)), Pal())])    # em cima da vasilha
+    assert [e["tipo"] for e in v.db.l] == ["agua"]
+
+    # reconhecimento pelo contorno: o fundo dentro do retângulo mas fora do contorno muda e a vasilha ainda é achada
+    class DB2:
+        def enviar_foto(s, c, b): pass
+        def objeto(s, i, c): pass
+        def baixar_snapshot(s, c): raise RuntimeError("sem banco")
+    with tempfile.TemporaryDirectory() as d:
+        cat = Catalogo(DB2(), Path(d))
+        pol = [[0.2, 0.5], [0.3, 0.5], [0.2, 0.62]]  # triângulo na vasilha
+        cat.sincronizar([{"id": "o1", "tipo": "bebedouro", "pet_id": "p1", "camera_id": "A", "x": 0.2, "y": 0.5, "w": 0.1, "h": 0.12, "poligono": pol}])
+        cena1 = _cenario(1, [(128, 180, 1.0)])
+        cat.aprender("A", cena1, [])
+        assert cat.objetos["o1"].dia is not None and cat.objetos["o1"].dia.mask is not None
+        cena2 = _cenario(1, [(148, 190, 1.0)])
+        cena2[190 + 25 : 190 + 43, 148 + 40 : 148 + 64] = 255   # a ponta de fora do contorno mudou (outro objeto encostado)
+        cat.atualizar("A", cena2, [], False, 1000)
+        assert abs(cat.caixas("A", "bebedouro")[0][0] - 148 / 640) < 0.03
+    print("contorno livre: só a área marcada conta (eventos e reconhecimento): ok")
+
+
+test_contorno_livre()

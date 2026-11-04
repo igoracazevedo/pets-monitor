@@ -342,6 +342,8 @@ create table if not exists public.pm_objetos (
 insert into public.pm_objetos (zona_id, pet_id, tipo, camera_origem, camera_id, x, y, w, h)
 select z.id, z.pet_id, z.tipo, z.camera_id, z.camera_id, z.x, z.y, z.w, z.h from public.pm_zonas z
 where not exists (select 1 from public.pm_objetos o where o.zona_id = z.id);
+alter table public.pm_zonas add column if not exists poligono jsonb;    -- contorno livre (pontos [x, y] de 0 a 1); x/y/w/h guardam o retângulo que o envolve
+alter table public.pm_objetos add column if not exists poligono jsonb;
 alter table public.pm_objetos enable row level security;
 drop policy if exists pm_objetos_ler on public.pm_objetos;
 create policy pm_objetos_ler on public.pm_objetos for select to authenticated using (public.pm_is_membro());

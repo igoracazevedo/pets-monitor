@@ -33,7 +33,8 @@ async function recortar(url: string, c: Caixa): Promise<{ blob: Blob; largura: n
  */
 export async function marcarLocal(p: { cameraId: string; tipo: string; petId: string | null; caixa: Caixa; urlFoto?: string }) {
   const box = { x: Number(p.caixa.x.toFixed(4)), y: Number(p.caixa.y.toFixed(4)), w: Number(p.caixa.w.toFixed(4)), h: Number(p.caixa.h.toFixed(4)) }
-  const z = await supabase.from('pm_zonas').insert({ camera_id: p.cameraId, tipo: p.tipo, pet_id: p.petId, ...box }).select('id').single()
+  const contorno = p.caixa.poligono && p.caixa.poligono.length >= 3 ? { poligono: p.caixa.poligono } : {}  // só no formato livre (assim o quadrado funciona mesmo antes do SQL novo)
+  const z = await supabase.from('pm_zonas').insert({ camera_id: p.cameraId, tipo: p.tipo, pet_id: p.petId, ...box, ...contorno }).select('id').single()
   if (z.error) throw z.error
   const id = crypto.randomUUID()
   let imagem_path: string | null = null
@@ -54,7 +55,7 @@ export async function marcarLocal(p: { cameraId: string; tipo: string; petId: st
     }
   }
   const o = await supabase.from('pm_objetos').insert({
-    id, zona_id: z.data.id, pet_id: p.petId, tipo: p.tipo, camera_origem: p.cameraId, camera_id: p.cameraId, ...box, imagem_path, largura_ref, visto_em: new Date().toISOString(),
+    id, zona_id: z.data.id, pet_id: p.petId, tipo: p.tipo, camera_origem: p.cameraId, camera_id: p.cameraId, ...box, ...contorno, imagem_path, largura_ref, visto_em: new Date().toISOString(),
   })
   if (o.error) throw new Error(`O local foi marcado, mas o catálogo não gravou o objeto (${o.error.message}). Rode o SQL do catálogo no Supabase.`)
 }

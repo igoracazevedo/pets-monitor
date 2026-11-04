@@ -3,16 +3,45 @@ import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 
 export type Local = { id?: string; caixa: Caixa; rotulo: string; cor: string }
 export type ItemFoto = { id: string; url: string; titulo?: string; legenda?: string; extra?: unknown; locais?: Local[] }
-export type Caixa = { x: number; y: number; w: number; h: number }
+export type Ponto = [number, number]
+export type Caixa = { x: number; y: number; w: number; h: number; poligono?: Ponto[] }  // poligono = contorno livre (0 a 1 na foto)
 export type Opcao = { valor: string; nome: string; grupo?: string }
 export type Marcacao = { opcoes: Opcao[]; onMarcar: (item: ItemFoto, caixa: Caixa, valor: string) => Promise<void>; onApagarLocal?: (id: string) => Promise<void> }
 export type AcaoVisualizador = { rotulo: string; ocupado: boolean; onClick: () => void }
+
+/** Simplifica o contorno desenhado à mão (Ramer-Douglas-Peucker) para guardar poucos pontos. */
+function simplificar(p: Ponto[], eps: number): Ponto[] {
+  if (p.length < 3) return p
+  const [a, b] = [p[0], p[p.length - 1]]
+  const dx = b[0] - a[0], dy = b[1] - a[1]
+  const n = Math.hypot(dx, dy) || 1e-9
+  let m = 0, k = 0
+  for (let i = 1; i < p.length - 1; i++) {
+    const d = Math.abs(dy * p[i][0] - dx * p[i][1] + b[0] * a[1] - b[1] * a[0]) / n
+    if (d > m) { m = d; k = i }
+  }
+  if (m <= eps) return [a, b]
+  return [...simplificar(p.slice(0, k + 1), eps).slice(0, -1), ...simplificar(p.slice(k), eps)]
+}
+
+/** Contorno livre sobre a foto (viewBox 0..1 esticado para a imagem). */
+function Contorno({ pontos, cor, grosso, tracejado, aberto }: { pontos: Ponto[]; cor: string; grosso?: boolean; tracejado?: boolean; aberto?: boolean }) {
+  const pts = pontos.map(([x, y]) => `${x},${y}`).join(' ')
+  const comum = { stroke: cor, strokeWidth: grosso ? 4 : 2, strokeDasharray: tracejado ? '6 4' : undefined, vectorEffect: 'non-scaling-stroke' as const, strokeLinejoin: 'round' as const }
+  return (
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,.7))' }}>
+      {aberto ? <polyline points={pts} fill="none" {...comum} /> : <polygon points={pts} fill={cor} fillOpacity={0.14} {...comum} />}
+    </svg>
+  )
+}
 
 /** Foto em tela cheia (no celular as miniaturas ficam pequenas demais). Setas/arrastar para trocar, pinça para ampliar. */
 export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }: { itens: ItemFoto[]; indice: number; onIndice: (i: number) => void; onFechar: () => void; acao?: AcaoVisualizador; marcar?: Marcacao }) {
   const [modo, setModo] = useState(false)
   const [arrasto, setArrasto] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const [pendente, setPendente] = useState<Caixa | null>(null)
+  const [formato, setFormato] = useState<'quadrado' | 'livre'>('quadrado')
+  const [trilha, setTrilha] = useState<Ponto[] | null>(null)
   const [escolha, setEscolha] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [verLocais, setVerLocais] = useState(true)
@@ -85,12 +114,22 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
       >
         <div ref={areaImg} className="relative inline-block max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
           <img src={item.url} alt={item.titulo ?? ''} className="block max-w-full object-contain" style={{ touchAction: modo ? 'none' : 'pinch-zoom', maxHeight: altura || undefined }} draggable={false} />
-          {verLocais && (item.locais ?? []).map((l, i) => (
+          {verLocais && (item.locais ?? []).map((l, i) => l.caixa.poligono ? (
+            <div key={`l${i}`} className="pointer-events-none absolute inset-0">
+              <Contorno pontos={l.caixa.poligono} cor={l.cor} grosso={destaque === i} tracejado={destaque !== i} />
+              <span className="absolute flex h-5 min-w-5 items-center justify-center rounded px-1 text-[12px] font-extrabold leading-none text-white" style={{ left: `${l.caixa.x * 100}%`, top: `${Math.max(0, l.caixa.y - 0.05) * 100}%`, background: l.cor, textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{i + 1}</span>
+            </div>
+          ) : (
             <div key={`l${i}`} className="pointer-events-none absolute" style={{ left: `${l.caixa.x * 100}%`, top: `${l.caixa.y * 100}%`, width: `${l.caixa.w * 100}%`, height: `${l.caixa.h * 100}%`, border: `${destaque === i ? 4 : 2}px ${destaque === i ? 'solid' : 'dashed'} ${l.cor}`, boxShadow: '0 0 0 1px rgba(0,0,0,.55)' }}>
               <span className={`absolute left-0 flex h-5 min-w-5 items-center justify-center rounded px-1 text-[12px] font-extrabold leading-none text-white ${l.caixa.y > 0.07 ? 'bottom-full mb-0.5' : 'top-0'}`} style={{ background: l.cor, textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{i + 1}</span>
             </div>
           ))}
-          {feitas.filter((f) => f.foto === item.id).map((f, i) => (
+          {feitas.filter((f) => f.foto === item.id).map((f, i) => f.caixa.poligono ? (
+            <div key={i} className="pointer-events-none absolute inset-0">
+              <Contorno pontos={f.caixa.poligono} cor="#34d399" grosso />
+              <span className="absolute rounded bg-emerald-500 px-1 text-[11px] font-bold" style={{ left: `${f.caixa.x * 100}%`, top: `${Math.max(0, f.caixa.y - 0.05) * 100}%` }}>{f.nome}</span>
+            </div>
+          ) : (
             <div key={i} className="pointer-events-none absolute border-2 border-emerald-400" style={{ left: `${f.caixa.x * 100}%`, top: `${f.caixa.y * 100}%`, width: `${f.caixa.w * 100}%`, height: `${f.caixa.h * 100}%` }}>
               <span className="absolute -top-5 left-0 rounded bg-emerald-500 px-1 text-[11px] font-bold">{f.nome}</span>
             </div>
@@ -105,21 +144,42 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
                 const y = (e.clientY - r.top) / r.height
                 e.currentTarget.setPointerCapture(e.pointerId)
                 setPendente(null)
+                if (formato === 'livre') return setTrilha([[x, y]])
                 setArrasto({ x0: x, y0: y, x1: x, y1: y })
               }}
               onPointerMove={(e) => {
+                if (trilha) {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+                  const u = trilha[trilha.length - 1]
+                  if (Math.hypot(x - u[0], y - u[1]) >= 0.004) setTrilha([...trilha, [x, y]])
+                  return
+                }
                 if (!arrasto) return
                 const r = e.currentTarget.getBoundingClientRect()
                 setArrasto({ ...arrasto, x1: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y1: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) })
               }}
               onPointerUp={() => {
+                if (trilha) {
+                  const xs = trilha.map((p) => p[0]), ys = trilha.map((p) => p[1])
+                  const caixa = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+                  setTrilha(null)
+                  if (trilha.length >= 8 && caixa.w > 0.03 && caixa.h > 0.03) {
+                    let pts = simplificar([...trilha, trilha[0]], 0.006).slice(0, -1)  // fecha o contorno
+                    if (pts.length > 48) pts = pts.filter((_, i) => i % Math.ceil(pts.length / 48) === 0)
+                    setPendente({ ...caixa, poligono: pts.map(([a, b]) => [Number(a.toFixed(4)), Number(b.toFixed(4))] as Ponto) })
+                  }
+                  return
+                }
                 if (!arrasto) return
                 const caixa = { x: Math.min(arrasto.x0, arrasto.x1), y: Math.min(arrasto.y0, arrasto.y1), w: Math.abs(arrasto.x1 - arrasto.x0), h: Math.abs(arrasto.y1 - arrasto.y0) }
                 setArrasto(null)
                 if (caixa.w > 0.03 && caixa.h > 0.03) setPendente(caixa)
               }}
             >
-              {(arrasto || pendente) && (() => {
+              {trilha && trilha.length > 1 && <Contorno pontos={trilha} cor="#fcd34d" grosso aberto />}
+              {pendente?.poligono && <Contorno pontos={pendente.poligono} cor="#fcd34d" grosso />}
+              {(arrasto || (pendente && !pendente.poligono)) && (() => {
                 const c = pendente ?? { x: Math.min(arrasto!.x0, arrasto!.x1), y: Math.min(arrasto!.y0, arrasto!.y1), w: Math.abs(arrasto!.x1 - arrasto!.x0), h: Math.abs(arrasto!.y1 - arrasto!.y0) }
                 return <div className="absolute border-2 border-amber-300 bg-amber-300/10" style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` }} />
               })()}
@@ -207,7 +267,21 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
               </button>
             </div>
           ) : (
-            <p className="text-white/80">Arraste o dedo sobre cada animal ou pessoa da foto e diga quem é. Dá para marcar vários na mesma foto.</p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-white/60">Formato:</span>
+                {(['quadrado', 'livre'] as const).map((f) => (
+                  <button key={f} type="button" onClick={() => setFormato(f)} className={`rounded-full px-3 py-1 text-[13px] font-semibold ${formato === f ? 'bg-amber-300 text-black' : 'bg-white/15 text-white'}`}>
+                    {f === 'quadrado' ? 'Quadrado' : 'Livre'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-white/80">
+                {formato === 'livre'
+                  ? 'Desenhe com o dedo, sem soltar, em volta do objeto (bebedouro, comedouro, cama…). Ao soltar, o contorno fecha sozinho.'
+                  : 'Arraste o dedo sobre cada animal ou pessoa da foto e diga quem é. Dá para marcar vários na mesma foto.'}
+              </p>
+            </div>
           )}
         </div>
       )}
