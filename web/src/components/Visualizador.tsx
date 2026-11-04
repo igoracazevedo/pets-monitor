@@ -16,6 +16,7 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
   const [escolha, setEscolha] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [verLocais, setVerLocais] = useState(true)
+  const [destaque, setDestaque] = useState<number | null>(null)
   const [feitas, setFeitas] = useState<{ caixa: Caixa; nome: string; foto: string }[]>([])
   const areaImg = useRef<HTMLDivElement>(null)
   const miolo = useRef<HTMLDivElement>(null)
@@ -83,8 +84,8 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
         <div ref={areaImg} className="relative inline-block max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
           <img src={item.url} alt={item.titulo ?? ''} className="block max-w-full object-contain" style={{ touchAction: modo ? 'none' : 'pinch-zoom', maxHeight: altura || undefined }} draggable={false} />
           {verLocais && (item.locais ?? []).map((l, i) => (
-            <div key={`l${i}`} className="pointer-events-none absolute border-2 border-dashed" style={{ left: `${l.caixa.x * 100}%`, top: `${l.caixa.y * 100}%`, width: `${l.caixa.w * 100}%`, height: `${l.caixa.h * 100}%`, borderColor: l.cor }}>
-              <span className="absolute left-0 top-full mt-0.5 whitespace-nowrap rounded px-1 text-[11px] font-bold text-white shadow" style={{ background: l.cor }}>{l.rotulo}</span>
+            <div key={`l${i}`} className="pointer-events-none absolute" style={{ left: `${l.caixa.x * 100}%`, top: `${l.caixa.y * 100}%`, width: `${l.caixa.w * 100}%`, height: `${l.caixa.h * 100}%`, border: `${destaque === i ? 4 : 2}px ${destaque === i ? 'solid' : 'dashed'} ${l.cor}`, boxShadow: '0 0 0 1px rgba(0,0,0,.55)' }}>
+              <span className={`absolute left-0 flex h-5 min-w-5 items-center justify-center rounded px-1 text-[12px] font-extrabold leading-none text-white ${l.caixa.y > 0.07 ? 'bottom-full mb-0.5' : 'top-0'}`} style={{ background: l.cor, textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{i + 1}</span>
             </div>
           ))}
           {feitas.filter((f) => f.foto === item.id).map((f, i) => (
@@ -135,6 +136,16 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
         )}
       </div>
 
+      {verLocais && (item.locais?.length ?? 0) > 0 && (
+        <div className="flex gap-2 overflow-x-auto bg-black/60 px-4 py-2" onClick={(e) => e.stopPropagation()}>
+          {item.locais!.map((l, i) => (
+            <button key={i} type="button" onClick={() => setDestaque(destaque === i ? null : i)} className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-semibold ${destaque === i ? 'bg-white text-black' : 'bg-white/15 text-white'}`}>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-extrabold text-white" style={{ background: l.cor }}>{i + 1}</span>
+              {l.rotulo}
+            </button>
+          ))}
+        </div>
+      )}
       {modo && marcar && (
         <div className="space-y-2 bg-black/70 px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
           {pendente ? (
