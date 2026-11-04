@@ -529,3 +529,30 @@ def test_comida_e_banheiro_em_qualquer_camera():
 
 
 test_comida_e_banheiro_em_qualquer_camera()
+
+
+def test_mensagem_do_ensino():
+    import cv2
+    import numpy as np
+    from pets_agent import varredura as V
+    from pets_agent.banheiro import Banheiro
+
+    class DB:
+        def __init__(s): s.imgs, s.l, s.ev = {}, [], []
+        def banheiro_amostras(s, cid): return [{"rotulo": r, "snapshot_path": p, "created_at": str(i)} for i, (r, p) in enumerate(s.l)]
+        def baixar_snapshot(s, p): return cv2.imencode(".jpg", s.imgs[p])[1].tobytes()
+        def enviar_foto(s, p, b): s.imgs[p] = cv2.imdecode(np.frombuffer(b, np.uint8), 1)
+        def nova_amostra_banheiro(s, r): s.l.append((r["rotulo"], r["snapshot_path"]))
+        def evento_banheiro(s, r): s.ev.append(r)
+    v = V.Varredura.__new__(V.Varredura)
+    v.db = DB(); v.banheiro = Banheiro(v.db); v.cfg = {"largura_foto": 640, "proteger_pessoas": False}; v.estado_banheiro = {}; v.zonas = {}
+    v.cameras = [({"nome": "B"}, {"id": "cam12345", "nome": "Banheiro"})]
+    V.capture.capturar = lambda c: np.full((120, 160, 3), 200, np.uint8)
+    m1 = v.ensinar_banheiro("cam12345", "limpo")
+    assert "1 limpo" in m1 and "Falta" not in m1, m1
+    m2 = v.ensinar_banheiro("cam12345", "xixi")
+    assert "1 limpo, 1 xixi" in m2, m2
+    print("mensagem do ensino conta os exemplos guardados: ok")
+
+
+test_mensagem_do_ensino()

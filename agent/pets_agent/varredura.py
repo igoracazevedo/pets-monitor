@@ -436,14 +436,18 @@ class Varredura:
                 except Exception as e:
                     print(f"  aviso: {e}", flush=True)
 
+    def recorte_banheiro(self, cid: str):
+        """Região do banheiro marcada nas fotos (x, y, largura, altura de 0 a 1), ou None para olhar a imagem toda."""
+        marcadas = [z for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "banheiro"]
+        if not marcadas:
+            return None
+        xs = [float(z["x"]) for z in marcadas]; ys = [float(z["y"]) for z in marcadas]
+        xe = [float(z["x"]) + float(z["w"]) for z in marcadas]; ye = [float(z["y"]) + float(z["h"]) for z in marcadas]
+        return (min(xs), min(ys), max(xe) - min(xs), max(ye) - min(ys))
+
     def vigiar_banheiro(self, cid: str, nome: str, frame, dets):
         """Câmera do banheiro: com o tapete livre (sem bicho nem gente), vê se tem xixi ou coco novo e registra quem foi."""
-        marcadas = [z for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "banheiro"]
-        recorte = None
-        if marcadas:  # banheiro marcado nas fotos: olha só a região dele (a câmera pode ser de qualquer cômodo)
-            xs = [float(z["x"]) for z in marcadas]; ys = [float(z["y"]) for z in marcadas]
-            xe = [float(z["x"]) + float(z["w"]) for z in marcadas]; ye = [float(z["y"]) + float(z["h"]) for z in marcadas]
-            recorte = (min(xs), min(ys), max(xe) - min(xs), max(ye) - min(ys))
+        recorte = self.recorte_banheiro(cid)
         h, w = frame.shape[:2]
 
         def sobre_o_tapete(d) -> bool:
@@ -498,9 +502,10 @@ class Varredura:
         caminho = self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame, camera_id), lambda f: _jpeg(f, self.cfg["largura_foto"]))
         self.db.evento_banheiro({"camera_id": camera_id, "tipo": rotulo, "snapshot_path": caminho, "visto_em": agora()})  # o estado atual do tapete aparece nos avisos
         self.estado_banheiro[camera_id] = rotulo  # o que já está lá não conta como evento novo
-        c = self.banheiro.cache.get(camera_id) or {}
-        n = {r: sum(1 for x, _ in c.get("exemplos", []) if x == r) for r in ("limpo", "xixi", "coco")}
-        falta = " Falta ensinar 'limpo' (tapete limpo) para eu poder comparar." if c.get("base") is None else ""
+        self.banheiro.carregar(camera_id, self.recorte_banheiro(camera_id))  # recarrega os exemplos para contar e já usar
+        linhas = self.db.banheiro_amostras(camera_id)  # conta o que está guardado, mesmo antes de ter o "limpo" para comparar
+        n = {r: sum(1 for l in linhas if l["rotulo"] == r) for r in ("limpo", "xixi", "coco")}
+        falta = " Falta ensinar 'limpo' (tapete limpo) para eu poder comparar." if n["limpo"] == 0 else ""
         return f"Aprendi '{rotulo}' em {reg['nome']}. Exemplos: {n['limpo']} limpo, {n['xixi']} xixi, {n['coco']} coco.{falta}"
 
     def identificar(self, pet_id: str, camera_id: str) -> str:
