@@ -252,6 +252,8 @@ alter table public.pm_pedidos add column if not exists camera_id uuid references
 -- "Identificar" por texto: o site pede e o agente marca o pet na foto de agora da câmera
 alter table public.pm_pedidos add column if not exists pet_id uuid references public.pm_pets(id) on delete cascade;
 alter table public.pm_pedidos add column if not exists resultado text;
+-- pedidos são temporários: apaga os de tipos antigos que impedem a regra nova
+delete from public.pm_pedidos where tipo not in ('localizar', 'fotos', 'teste', 'identificar', 'ensinar_banheiro');
 alter table public.pm_pedidos drop constraint if exists pm_pedidos_tipo_check;
 alter table public.pm_pedidos add constraint pm_pedidos_tipo_check check (tipo in ('localizar', 'fotos', 'teste', 'identificar', 'ensinar_banheiro'));
 alter table public.pm_pedidos add column if not exists rotulo text;
