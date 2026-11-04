@@ -238,10 +238,12 @@ def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = ""
         buf[0] = resto[n:]
         return linhas[0], heads, resto[:n].decode("latin-1")
 
+    agente = ["User-Agent: pets-monitor\r\n"]
+
     def pedir(metodo: str, uri: str, extra: str = "") -> tuple[str, dict, str]:
         for _ in range(2):
             cseq[0] += 1
-            sk.sendall(f"{metodo} {uri} RTSP/1.0\r\nCSeq: {cseq[0]}\r\nUser-Agent: pets-monitor\r\n{extra}{auth(metodo, uri)}\r\n".encode())
+            sk.sendall(f"{metodo} {uri} RTSP/1.0\r\nCSeq: {cseq[0]}\r\n{agente[0]}{extra}{auth(metodo, uri)}\r\n".encode())
             st, h, c = ler()
             if " 401" in st and h.get("www-authenticate") and h["www-authenticate"] != desafio[0]:
                 desafio[0] = h["www-authenticate"]
@@ -263,14 +265,19 @@ def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = ""
         candidatos = list(dict.fromkeys(candidatos))
         tentativas = []
         for alvo in candidatos:
-            for transp in ("RTP/AVP/TCP;unicast;interleaved=0-1", "RTP/AVP;unicast;client_port=50000-50001"):
+            for transp, agente[0] in (
+                ("RTP/AVP/TCP;unicast;interleaved=0-1", "User-Agent: pets-monitor\r\n"),
+                ("RTP/AVP/TCP;unicast;interleaved=0-1", "User-Agent: Lavf58.76.100\r\n"),
+                ("RTP/AVP/TCP;unicast;interleaved=0-1", ""),
+                ("RTP/AVP;unicast;client_port=50000-50001", ""),
+            ):
                 st, h, corpo = pedir("SETUP", alvo, f"Transport: {transp}\r\n")
                 if " 200" in st:
                     break
                 if not tentativas:
                     detalhe = " ".join(f"{k}={v}" for k, v in h.items() if k not in ("cseq", "date"))[:160]
                     tentativas.append(f"[resposta: {detalhe} {corpo.strip()[:80]}]")
-                tentativas.append(f"{st.replace('RTSP/1.0 ', '')} em {alvo.replace(f'rtsp://{ip}', '')} ({transp.split(';')[0][8:]})")
+                tentativas.append(f"{st.replace('RTSP/1.0 ', '')} em {alvo.replace(f'rtsp://{ip}', '')} ({transp.split(';')[0][8:] or 'UDP'}, {agente[0][12:18] or 'sem UA'})")
             else:
                 continue
             break
