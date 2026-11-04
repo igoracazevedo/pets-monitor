@@ -8,6 +8,16 @@ MAX_POR_ROTULO = 12
 DIST_MAX = 0.9  # mais longe que isso de qualquer exemplo = "não sei" (luz mudou, câmera mexeu...)
 
 
+def cortar(img: np.ndarray, recorte) -> np.ndarray:
+    """Só a região marcada como banheiro (x, y, largura, altura de 0 a 1); sem região, a imagem inteira."""
+    if not recorte:
+        return img
+    h, w = img.shape[:2]
+    x, y, rw, rh = recorte
+    x1, y1, x2, y2 = max(0, int(x * w)), max(0, int(y * h)), min(w, int((x + rw) * w)), min(h, int((y + rh) * h))
+    return img[y1:y2, x1:x2] if x2 - x1 > 8 and y2 - y1 > 8 else img
+
+
 def _pequena(img: np.ndarray, largura: int = 320) -> np.ndarray:
     h, w = img.shape[:2]
     img = cv2.resize(img, (largura, max(8, int(h * largura / w))), interpolation=cv2.INTER_AREA)
@@ -51,7 +61,7 @@ class Banheiro:
     def _imagem(self, caminho: str) -> np.ndarray | None:
         return cv2.imdecode(np.frombuffer(self.db.baixar_snapshot(caminho), np.uint8), cv2.IMREAD_COLOR)
 
-    def carregar(self, cid: str):
+    def carregar(self, cid: str, recorte=None):
         linhas = sorted(self.db.banheiro_amostras(cid), key=lambda r: r["created_at"])
         por_rotulo: dict[str, list] = {r: [] for r in ROTULOS}
         for l in linhas:
@@ -66,31 +76,31 @@ class Banheiro:
                         imagens.setdefault(r, []).append(img)
                 except Exception:
                     pass
-        self.cache[cid] = self._montar(imagens)
+        self.cache[cid] = {**self._montar(imagens, recorte), "recorte": recorte}
 
     @staticmethod
-    def _montar(imagens: dict[str, list]) -> dict:
+    def _montar(imagens: dict[str, list], recorte=None) -> dict:
         limpas = imagens.get("limpo") or []
-        base = limpas[-1] if limpas else None  # o "limpo" mais recente é a referência
+        base = cortar(limpas[-1], recorte) if limpas else None  # o "limpo" mais recente é a referência
         exemplos = []
         if base is not None:
             for r, imgs in imagens.items():
                 for img in imgs:
-                    exemplos.append((r, caracteristicas(base, img)))
+                    exemplos.append((r, caracteristicas(base, cortar(img, recorte))))
         return {"base": base, "exemplos": exemplos}
 
     def pronto(self, cid: str) -> bool:
         c = self.cache.get(cid)
         return bool(c and c["base"] is not None and any(r in ("xixi", "coco") for r, _ in c["exemplos"]))
 
-    def classificar(self, cid: str, frame: np.ndarray):
+    def classificar(self, cid: str, frame: np.ndarray, recorte=None):
         """-> (rotulo, distância) ou None quando ainda não há exemplos suficientes. 'desconhecido' = nada parecido com o que já vi."""
-        if cid not in self.cache:
-            self.carregar(cid)
+        if cid not in self.cache or self.cache[cid].get("recorte") != recorte:
+            self.carregar(cid, recorte)
         if not self.pronto(cid):
             return None
         c = self.cache[cid]
-        v = caracteristicas(c["base"], frame)
+        v = caracteristicas(c["base"], cortar(frame, recorte))
         if v[0] < 0.03:  # quase nada mudou
             return "limpo", 0.0
         dist, rot = min((float(np.linalg.norm(v - e)), r) for r, e in c["exemplos"])
@@ -103,5 +113,5 @@ class Banheiro:
         caminho = f"banheiro/{cid[:8]}-{rotulo}-{datetime.now():%Y%m%d%H%M%S}.jpg"
         self.db.enviar_foto(caminho, jpeg_fn(frame))
         self.db.nova_amostra_banheiro({"camera_id": cid, "rotulo": rotulo, "snapshot_path": caminho})
-        self.carregar(cid)
+        self.cache.pop(cid, None)  # recarrega na próxima leitura
         return caminho

@@ -313,10 +313,13 @@ class Varredura:
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 
-        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome) or any(z.get("tipo") == "bebedouro" for z in self.zonas.get(cid, [])):
+        zs = getattr(self, "zonas", {}).get(cid, [])
+        tem = lambda t: any(z.get("tipo") == t for z in zs)
+        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome) or tem("bebedouro") or tem("comedouro") or tem("banheiro"):
             try:
                 self.vigiar_agua(cid, nome, frame, achados)
-                if "banheiro" in _sem_acento(nome):
+                self.vigiar_comida(cid, nome, frame, achados)
+                if "banheiro" in _sem_acento(nome) or tem("banheiro"):
                     self.vigiar_banheiro(cid, nome, frame, dets)
             except Exception as e:
                 print(f"  banheiro {nome}: {e}", flush=True)
@@ -391,6 +394,17 @@ class Varredura:
             if not chave_zona:
                 return
             lista = [tuple(zonas[chave_zona])]
+        self._evento_por_zona("agua", cid, nome, frame, achados, lista, intervalo=600, parado=3600)
+
+    def vigiar_comida(self, cid: str, nome: str, frame, achados):
+        """Bicho com a boca nos comedouros que você marcou nas fotos (em qualquer câmera) = comendo."""
+        lista = [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "comedouro"]
+        if lista:
+            self._evento_por_zona("comeu", cid, nome, frame, achados, lista, intervalo=900, parado=1200)
+
+    def _evento_por_zona(self, tipo: str, cid: str, nome: str, frame, achados, lista, intervalo: int, parado: int):
+        """Corpo do bicho sobre a região (bebedouro/comedouro): registra o evento com foto, no máximo 1 a cada `intervalo` s por bicho
+        e sem repetir enquanto ele continua exatamente parado no mesmo lugar (dormindo ao lado) por até `parado` s."""
         h, w = frame.shape[:2]
         for d, p in achados:
             if d.especie == "pessoa":
@@ -398,20 +412,21 @@ class Varredura:
             x1, y1, x2, y2 = (d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h)
             if not any(max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy)) >= 0.35 * zw * zh for zx, zy, zw, zh in lista):
                 continue
-            chave = p.pet_id or f"?{cid}"
-            if time.time() - self.ultima_agua.get(chave, 0) < 600:  # uma vez a cada 10 min por bicho
+            chave = f"{tipo}:{p.pet_id or '?' + cid}"
+            if time.time() - self.ultima_agua.get(chave, 0) < intervalo:
                 continue
             antes = self.caixa_agua.get(chave)
-            if antes and time.time() - antes[0] < 3600 and _iou(d.caixa, antes[1]) > 0.7:  # parado no mesmo lugar (dormindo ao lado): não é beber
+            if antes and time.time() - antes[0] < parado and _iou(d.caixa, antes[1]) > 0.7:
                 continue
             self.ultima_agua[chave] = time.time()
             self.caixa_agua[chave] = (time.time(), d.caixa)
             pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
-            foto = f"avistamentos/{datetime.now():%Y/%m/%d}/agua-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
+            foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{tipo}-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
             self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
-            self.db.evento_banheiro({"camera_id": cid, "tipo": "agua", "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
-            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} bebeu água", flush=True)
-            if self.notificador and self.notificador.ativo:
+            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+            frase = "bebeu água" if tipo == "agua" else "comendo"
+            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}", flush=True)
+            if tipo == "agua" and self.notificador and self.notificador.ativo:
                 titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
                 try:
                     self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"agua-{int(time.time())}")
@@ -420,9 +435,23 @@ class Varredura:
 
     def vigiar_banheiro(self, cid: str, nome: str, frame, dets):
         """Câmera do banheiro: com o tapete livre (sem bicho nem gente), vê se tem xixi ou coco novo e registra quem foi."""
-        if dets:  # alguém em cima do tapete: a mudança é o próprio corpo, não vale
+        marcadas = [z for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "banheiro"]
+        recorte = None
+        if marcadas:  # banheiro marcado nas fotos: olha só a região dele (a câmera pode ser de qualquer cômodo)
+            xs = [float(z["x"]) for z in marcadas]; ys = [float(z["y"]) for z in marcadas]
+            xe = [float(z["x"]) + float(z["w"]) for z in marcadas]; ye = [float(z["y"]) + float(z["h"]) for z in marcadas]
+            recorte = (min(xs), min(ys), max(xe) - min(xs), max(ye) - min(ys))
+        h, w = frame.shape[:2]
+
+        def sobre_o_tapete(d) -> bool:
+            if not recorte:
+                return True
+            x1, y1, x2, y2 = d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h
+            return min(x2, recorte[0] + recorte[2]) > max(x1, recorte[0]) and min(y2, recorte[1] + recorte[3]) > max(y1, recorte[1])
+
+        if any(sobre_o_tapete(d) for d in dets):  # alguém em cima do tapete: a mudança é o próprio corpo, não vale
             return
-        r = self.banheiro.classificar(cid, frame)
+        r = self.banheiro.classificar(cid, frame, recorte)
         if r is None:
             return
         rot, _ = r

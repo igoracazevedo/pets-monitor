@@ -496,3 +496,36 @@ def test_cores_e_locais():
 
 
 test_cores_e_locais()
+
+
+def test_comida_e_banheiro_em_qualquer_camera():
+    import cv2
+    import numpy as np
+    from pets_agent import varredura as V
+    from pets_agent.banheiro import Banheiro, cortar
+    from pets_agent.detect import Deteccao
+
+    class Pal: pet_id = "p1"
+
+    class DB:
+        l = []
+        def enviar_foto(s, c, b): pass
+        def evento_banheiro(s, r): s.l.append(r)
+    v = V.Varredura.__new__(V.Varredura)
+    v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}; v.caixa_agua = {}
+    v.pets = [{"id": "p1", "nome": "Mavi"}]
+    v.zonas = {"cX": [{"tipo": "comedouro", "x": 0.1, "y": 0.6, "w": 0.2, "h": 0.2}]}
+    f = np.zeros((200, 200, 3), np.uint8)
+    v.vigiar_comida("cX", "Cozinha", f, [(Deteccao("dog", 0.9, (20, 120, 60, 160)), Pal())])
+    assert [e["tipo"] for e in v.db.l] == ["comeu"] and v.db.l[0]["pet_id"] == "p1"
+    # o mesmo bicho longe do comedouro não conta
+    v.ultima_agua = {}; v.db.l.clear()
+    v.vigiar_comida("cX", "Cozinha", f, [(Deteccao("dog", 0.9, (150, 10, 190, 40)), Pal())])
+    assert not v.db.l
+    # recorte: só a região do banheiro marcada entra na comparação
+    img = np.arange(200 * 100 * 3, dtype=np.uint8).reshape(200, 100, 3)
+    assert cortar(img, (0.5, 0.5, 0.5, 0.5)).shape[:2] == (100, 50)
+    print("comeu em qualquer câmera e recorte do banheiro: ok")
+
+
+test_comida_e_banheiro_em_qualquer_camera()

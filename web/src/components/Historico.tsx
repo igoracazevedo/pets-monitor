@@ -57,7 +57,7 @@ export default function Historico({ admin }: { admin: boolean }) {
       return
     }
     const nome = dados.pets.find((p) => p.id === a.pet_id)?.nome ?? 'O pet'
-    const texto = tipo === 'agua' ? 'bebeu água' : tipo === 'xixi' ? 'fez xixi' : 'fez cocô'
+    const texto = tipo === 'agua' ? 'bebeu água' : tipo === 'comeu' ? 'está comendo' : tipo === 'xixi' ? 'fez xixi' : 'fez cocô'
     if (!confirm(`Registrar que ${nome} ${texto} em ${nomeCam(a.camera_id)} às ${dataHora(a.visto_em)}?`)) return
     const { error } = await supabase.from('pm_banheiro_eventos').insert({ camera_id: a.camera_id, tipo, pet_id: a.pet_id, snapshot_path: a.snapshot_path, visto_em: a.visto_em })
     alert(error ? `Não consegui registrar: ${error.message}` : 'Evento registrado. Veja no menu Eventos.')
@@ -255,6 +255,7 @@ export default function Historico({ admin }: { admin: boolean }) {
                   <select aria-label="Registrar evento" className="w-full !px-2 !py-1.5 text-[13px]" value="" onChange={(e) => void registrarEvento(a, e.target.value)}>
                     <option value="">Registrar evento…</option>
                     <option value="agua">Bebeu água</option>
+                    <option value="comeu">Comendo</option>
                     <option value="xixi">Fez xixi</option>
                     <option value="coco">Fez cocô</option>
                   </select>

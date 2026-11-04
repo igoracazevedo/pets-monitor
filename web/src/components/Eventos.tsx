@@ -213,7 +213,7 @@ export default function Eventos() {
         </select>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 text-center">
+      <div className="grid grid-cols-3 gap-2 text-center sm:grid-cols-5">
         {SERIES.map((s) => (
           <div key={s.id} className="vidro px-1 py-3">
             <p className="text-2xl font-extrabold" style={{ color: TINTA.forte }}>{conta(s.id)}</p>

@@ -58,7 +58,7 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
     out.push({ texto: `Último evento: ${textoEvento(ultimo, quem)} em ${dataHora(ultimo.visto_em)}.`, tom: 'ok', foto: ultimo.snapshot_path, quando: ultimo.visto_em, titulo: textoEvento(ultimo, quem) })
   }
   const porCamera = new Map<string, EventoBanheiro[]>()
-  for (const e of d.banheiro.filter((x) => x.tipo !== 'agua')) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
+  for (const e of d.banheiro.filter((x) => x.tipo !== 'agua' && x.tipo !== 'comeu')) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
   for (const [cid, evs] of porCamera) {
     const nome = cam(cid)?.nome ?? 'Banheiro'
     const iLimpo = evs.findIndex((e) => e.tipo === 'limpo') // eventos vêm do mais novo para o mais antigo
