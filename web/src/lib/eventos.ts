@@ -2,8 +2,8 @@ import type { EventoBanheiro } from './supabase'
 
 type Tipo = EventoBanheiro['tipo']
 
-/** Exemplos ensinados pelo comando ("xixi no Banheiro") ficam em banheiro/ e não são ocorrências de verdade. */
-export const exemplo = (e: EventoBanheiro) => !!e.snapshot_path?.startsWith('banheiro/')
+/** Exemplos de xixi/cocô ensinados pelo comando ("xixi no Banheiro") ficam em banheiro/ e não contam como ocorrência; o "limpo" conta (alguém limpou). */
+export const exemplo = (e: EventoBanheiro) => !!e.snapshot_path?.startsWith('banheiro/') && e.tipo !== 'limpo' // "limpo" ensinado é a limpeza de verdade: conta como evento
 
 const VERBO = { xixi: 'fez xixi', coco: 'fez cocô', agua: 'bebeu água', comeu: 'comendo' } as const
 export function textoEvento(e: EventoBanheiro, nome: string | undefined): string {
