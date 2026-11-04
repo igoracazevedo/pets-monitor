@@ -30,12 +30,12 @@ async function carregar(): Promise<Dados> {
 export default function Catalogo({ admin }: { admin: boolean }) {
   const { dados, carregando, recarregar } = useDados<Dados>(carregar, { objetos: [], zonas: [], pets: [], cams: {}, fotos: {}, semTabela: false }, 30000)
   const { abrir, janela } = useVisualizador()
+  const [erro, setErro] = useState('') // hooks sempre antes de qualquer return antecipado
   if (carregando) return <p className="py-8 text-center text-slate-400">Carregando…</p>
   if (dados.semTabela) return <p className="vidro p-4 text-sm text-slate-600">A tabela do catálogo ainda não existe: rode o trecho SQL do catálogo no Supabase.</p>
   const grupos = [...dados.pets.map((p) => ({ id: p.id as string | null, nome: p.nome })), { id: null as string | null, nome: 'Sem dono' }]
   const zonaDe = (id: string) => dados.zonas.find((z) => z.id === id)
   const donoDe = (o: ObjetoCatalogo) => (zonaDe(o.zona_id) ? zonaDe(o.zona_id)!.pet_id : o.pet_id) // vale o que está no local marcado: é onde você troca o dono
-  const [erro, setErro] = useState('')
 
   async function definirDono(o: ObjetoCatalogo, petId: string) {
     setErro('')
