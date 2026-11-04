@@ -776,3 +776,53 @@ def test_descrever_rtsp():
 
 
 test_descrever_rtsp()
+
+
+def test_tocar_rtsp():
+    import socket, threading
+    from pets_agent.__main__ import _tocar
+
+    def servidor(manda_video: bool):
+        srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(5)
+
+        def conexao(c):
+            c.settimeout(5)
+            try:
+                while True:
+                    req = c.recv(4096).decode()
+                    if not req:
+                        return
+                    metodo = req.split(" ", 1)[0]
+                    if "Authorization" not in req:
+                        c.sendall(b'RTSP/1.0 401 Unauthorized\r\nCSeq: 1\r\nWWW-Authenticate: Digest realm="cam", nonce="n1"\r\n\r\n')
+                    elif metodo == "DESCRIBE":
+                        corpo = "v=0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=control:track1\r\n"
+                        c.sendall(f"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Base: rtsp://x/stream1/\r\nContent-Length: {len(corpo)}\r\n\r\n{corpo}".encode())
+                    elif metodo == "SETUP":
+                        assert "track1" in req
+                        c.sendall(b"RTSP/1.0 200 OK\r\nCSeq: 3\r\nSession: 99;timeout=60\r\nTransport: RTP/AVP/TCP;interleaved=0-1\r\n\r\n")
+                    elif metodo == "PLAY":
+                        c.sendall(b"RTSP/1.0 200 OK\r\nCSeq: 4\r\nSession: 99\r\n\r\n")
+                        if manda_video:
+                            for _ in range(20):
+                                c.sendall(b"$\x00\x01\x00" + b"x" * 256)
+            except Exception:
+                pass
+            finally:
+                c.close()
+
+        def laco():
+            while True:
+                c, _a = srv.accept()
+                threading.Thread(target=conexao, args=(c,), daemon=True).start()
+
+        threading.Thread(target=laco, daemon=True).start()
+        return srv.getsockname()[1]
+
+    assert "VÍDEO CHEGANDO" in _tocar("127.0.0.1", servidor(True), "/stream1", "igor", "segredo", segundos=1)
+    assert "mandou só" in _tocar("127.0.0.1", servidor(False), "/stream1", "igor", "segredo", segundos=1)
+    assert "não conectou" in _tocar("127.0.0.1", 9, "/stream1")
+    print("sondar conta o vídeo que chega depois do PLAY: ok")
+
+
+test_tocar_rtsp()

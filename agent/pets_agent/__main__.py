@@ -193,6 +193,96 @@ def _descrever(ip: str, porta: int, caminho: str, usuario: str = "", senha: str 
         return {"status": f"sem resposta ({type(e).__name__}: {str(e)[:80]})", "login": "", "formatos": []}
 
 
+def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = "", segundos: float = 4.0) -> str:
+    """Faz o que o programa faz depois do DESCRIBE (SETUP e PLAY por TCP) e conta quantos bytes de vídeo chegam. Diz em que passo parou."""
+    import base64
+    import hashlib
+    import re
+    import socket
+    import time
+
+    md5 = lambda t: hashlib.md5(t.encode()).hexdigest()
+    url = f"rtsp://{ip}:{porta}{caminho}"
+    desafio = [""]
+    cseq = [0]
+    buf = [b""]
+    try:
+        sk = socket.create_connection((ip, porta), timeout=6)
+    except Exception as e:
+        return f"não conectou ({type(e).__name__})"
+    sk.settimeout(3)
+
+    def auth(metodo: str, uri: str) -> str:
+        d = desafio[0]
+        if not d or not usuario:
+            return ""
+        if d.lower().startswith("digest"):
+            campo = lambda k: (re.search(rf'{k}="([^"]*)"', d) or [None, ""])[1]
+            realm, nonce = campo("realm"), campo("nonce")
+            r = md5(f"{md5(f'{usuario}:{realm}:{senha}')}:{nonce}:{md5(f'{metodo}:{uri}')}")
+            return f'Authorization: Digest username="{usuario}", realm="{realm}", nonce="{nonce}", uri="{uri}", response="{r}"\r\n'
+        return "Authorization: Basic " + base64.b64encode(f"{usuario}:{senha}".encode()).decode() + "\r\n"
+
+    def ler() -> tuple[str, dict, str]:
+        while b"\r\n\r\n" not in buf[0]:
+            parte = sk.recv(4096)
+            if not parte:
+                raise ConnectionError("a câmera fechou a conexão")
+            buf[0] += parte
+        cab, _, resto = buf[0].partition(b"\r\n\r\n")
+        linhas = cab.decode("latin-1").split("\r\n")
+        heads = {l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip() for l in linhas[1:] if ":" in l}
+        n = int(heads.get("content-length", "0") or 0)
+        while len(resto) < n:
+            resto += sk.recv(4096)
+        buf[0] = resto[n:]
+        return linhas[0], heads, resto[:n].decode("latin-1")
+
+    def pedir(metodo: str, uri: str, extra: str = "") -> tuple[str, dict, str]:
+        for _ in range(2):
+            cseq[0] += 1
+            sk.sendall(f"{metodo} {uri} RTSP/1.0\r\nCSeq: {cseq[0]}\r\nUser-Agent: pets-monitor\r\n{extra}{auth(metodo, uri)}\r\n".encode())
+            st, h, c = ler()
+            if " 401" in st and h.get("www-authenticate") and h["www-authenticate"] != desafio[0]:
+                desafio[0] = h["www-authenticate"]
+                continue
+            return st, h, c
+        return st, h, c
+
+    try:
+        st, h, sdp = pedir("DESCRIBE", url, "Accept: application/sdp\r\n")
+        if " 200" not in st:
+            return f"DESCRIBE parou: {st}"
+        bloco = next((b for b in sdp.split("m=")[1:] if b.startswith("video")), "")
+        ctl = (re.search(r"a=control:(\S+)", bloco) or [None, ""])[1]
+        base = h.get("content-base") or url
+        faixa = ctl if ctl.startswith("rtsp://") else (url if ctl in ("", "*") else base.rstrip("/") + "/" + ctl)
+        st, h, _ = pedir("SETUP", faixa, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n")
+        if " 200" not in st:
+            return f"SETUP parou: {st}"
+        sessao = h.get("session", "").split(";")[0]
+        st, h, _ = pedir("PLAY", url, f"Session: {sessao}\r\nRange: npt=0.000-\r\n")
+        if " 200" not in st:
+            return f"PLAY parou: {st}"
+        total = len(buf[0])
+        fim = time.time() + segundos
+        while time.time() < fim:
+            try:
+                parte = sk.recv(65536)
+            except socket.timeout:
+                continue
+            if not parte:
+                break
+            total += len(parte)
+        if total > 2000:
+            return f"VÍDEO CHEGANDO ({total // 1024} KB em {segundos:.0f} s)"
+        return f"a câmera aceitou o PLAY, mas mandou só {total} bytes: modo privacidade/suspensão ligado, ou ela só entrega vídeo para o app"
+    except Exception as e:
+        return f"parou no meio ({type(e).__name__}: {str(e)[:80]})"
+    finally:
+        sk.close()
+
+
 def cmd_sondar(args):
     """Câmera genérica: testa os caminhos RTSP mais comuns e diz qual devolve imagem."""
     from urllib.parse import quote
@@ -218,6 +308,8 @@ def cmd_sondar(args):
         print(f"  {c}: {r['status']}" + (f" (login {r['login']})" if r["login"] else ""))
         for f in r["formatos"]:
             print(f"      {f}")
+        if " 200" in r["status"]:
+            print(f"      => recebendo vídeo: {_tocar(args.ip, args.porta, c, args.usuario, args.senha)}")
     print()
     cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
     print(f"Testando {len(CAMINHOS_RTSP)} caminhos em {args.ip}:{args.porta} (uns 5 s cada se não existir)...")
