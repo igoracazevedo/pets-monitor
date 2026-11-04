@@ -155,7 +155,7 @@ export default function Historico({ admin }: { admin: boolean }) {
       { valor: `zona:${t}:todos`, nome: `${TIPOS_ZONA[t]} (das duas)`, grupo: 'Marcar local' },
     ]),
   ]
-  const { abrir, janela } = useVisualizador(admin ? { opcoes, onMarcar: marcarNaFoto } : undefined)
+  const { abrir, janela } = useVisualizador(admin ? { opcoes, onMarcar: marcarNaFoto, onApagarLocal: async (id) => { await supabase.from('pm_zonas').delete().eq('id', id); await recarregar() } } : undefined)
   const verFoto = (a: Avistamento) => {
     const com = dados.lista.filter((x) => x.snapshot_path && dados.fotos[x.snapshot_path])
     abrir(

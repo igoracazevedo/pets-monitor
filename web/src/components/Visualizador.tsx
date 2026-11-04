@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 
-export type Local = { caixa: Caixa; rotulo: string; cor: string }
+export type Local = { id?: string; caixa: Caixa; rotulo: string; cor: string }
 export type ItemFoto = { id: string; url: string; titulo?: string; legenda?: string; extra?: unknown; locais?: Local[] }
 export type Caixa = { x: number; y: number; w: number; h: number }
 export type Opcao = { valor: string; nome: string; grupo?: string }
-export type Marcacao = { opcoes: Opcao[]; onMarcar: (item: ItemFoto, caixa: Caixa, valor: string) => Promise<void> }
+export type Marcacao = { opcoes: Opcao[]; onMarcar: (item: ItemFoto, caixa: Caixa, valor: string) => Promise<void>; onApagarLocal?: (id: string) => Promise<void> }
 export type AcaoVisualizador = { rotulo: string; ocupado: boolean; onClick: () => void }
 
 /** Foto em tela cheia (no celular as miniaturas ficam pequenas demais). Setas/arrastar para trocar, pinça para ampliar. */
@@ -17,11 +17,13 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
   const [salvando, setSalvando] = useState(false)
   const [verLocais, setVerLocais] = useState(true)
   const [destaque, setDestaque] = useState<number | null>(null)
+  const [apagados, setApagados] = useState<Set<string>>(new Set())
   const [feitas, setFeitas] = useState<{ caixa: Caixa; nome: string; foto: string }[]>([])
   const areaImg = useRef<HTMLDivElement>(null)
   const miolo = useRef<HTMLDivElement>(null)
   const [altura, setAltura] = useState(0)
-  const item = itens[indice]
+  const item0 = itens[indice]
+  const item = item0 && { ...item0, locais: item0.locais?.filter((l) => !l.id || !apagados.has(l.id)) }  // locais já apagados somem na hora
   const inicioToque = useRef<number | null>(null)
   const ir = (d: number) => itens.length > 1 && onIndice((indice + d + itens.length) % itens.length)
 
@@ -144,6 +146,21 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
               {l.rotulo}
             </button>
           ))}
+          {destaque !== null && item.locais![destaque]?.id && marcar?.onApagarLocal && (
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-rose-600 px-3 py-1.5 text-[13px] font-semibold text-white"
+              onClick={async () => {
+                const l = item.locais![destaque]
+                if (!window.confirm(`Apagar a marcação "${l.rotulo}" desta câmera?`)) return
+                await marcar.onApagarLocal!(l.id!)
+                setApagados((a) => new Set(a).add(l.id!))
+                setDestaque(null)
+              }}
+            >
+              Apagar este local
+            </button>
+          )}
         </div>
       )}
       {modo && marcar && (

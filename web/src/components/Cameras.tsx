@@ -110,7 +110,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
           indice={ver}
           onIndice={setVer}
           onFechar={() => setVer(null)}
-          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome, grupo: 'Quem é' })), ...opcoesDeLocais(dados.pets)], onMarcar: marcarNaCamera } : undefined}
+          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome, grupo: 'Quem é' })), ...opcoesDeLocais(dados.pets)], onMarcar: marcarNaCamera, onApagarLocal: async (id) => { await supabase.from('pm_zonas').delete().eq('id', id); await recarregar() } } : undefined}
           acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
         />
       )}

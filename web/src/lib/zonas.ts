@@ -12,7 +12,7 @@ export function corDoPet(pets: Pet[], id: string | null): string {
 export const rotuloZona = (pets: Pet[], z: Zona) => `${TIPOS_ZONA[z.tipo]} ${z.pet_id ? `da ${pets.find((p) => p.id === z.pet_id)?.nome ?? '?'}` : '(das duas)'}`
 
 export function locaisDaCamera(pets: Pet[], zonas: Zona[], cameraId: string): Local[] {
-  return zonas.filter((z) => z.camera_id === cameraId).map((z) => ({ caixa: { x: Number(z.x), y: Number(z.y), w: Number(z.w), h: Number(z.h) }, rotulo: rotuloZona(pets, z), cor: corDoPet(pets, z.pet_id) }))
+  return zonas.filter((z) => z.camera_id === cameraId).map((z) => ({ id: z.id, caixa: { x: Number(z.x), y: Number(z.y), w: Number(z.w), h: Number(z.h) }, rotulo: rotuloZona(pets, z), cor: corDoPet(pets, z.pet_id) }))
 }
 
 /** Opções do "Marcar quem é" para marcar locais (banheiro, bebedouro, comedouro, cama) de cada pet ou das duas. */
