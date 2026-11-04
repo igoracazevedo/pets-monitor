@@ -257,9 +257,24 @@ def _tocar(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = ""
         ctl = (re.search(r"a=control:(\S+)", bloco) or [None, ""])[1]
         base = h.get("content-base") or url
         faixa = ctl if ctl.startswith("rtsp://") else (url if ctl in ("", "*") else base.rstrip("/") + "/" + ctl)
-        st, h, _ = pedir("SETUP", faixa, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n")
-        if " 200" not in st:
-            return f"SETUP parou: {st}"
+        candidatos = [faixa]
+        if ctl and not ctl.startswith("rtsp://"):
+            candidatos += [url.rstrip("/") + "/" + ctl, f"rtsp://{ip}:{porta}/{ctl}", f"rtsp://{ip}/{ctl}"]
+        candidatos = list(dict.fromkeys(candidatos))
+        tentativas = []
+        for alvo in candidatos:
+            for transp in ("RTP/AVP/TCP;unicast;interleaved=0-1", "RTP/AVP;unicast;client_port=50000-50001"):
+                st, h, _ = pedir("SETUP", alvo, f"Transport: {transp}\r\n")
+                if " 200" in st:
+                    break
+                tentativas.append(f"{st.replace('RTSP/1.0 ', '')} em {alvo.replace(f'rtsp://{ip}', '')} ({transp.split(';')[0][8:]})")
+            else:
+                continue
+            break
+        else:
+            return f"SETUP parou (control='{ctl}'): " + " | ".join(tentativas)
+        if "UDP" not in transp and "client_port" in transp:
+            return f"SETUP só aceita UDP em {alvo}: o capture precisa usar UDP (sem rtsp_transport;tcp)"
         sessao = h.get("session", "").split(";")[0]
         st, h, _ = pedir("PLAY", url, f"Session: {sessao}\r\nRange: npt=0.000-\r\n")
         if " 200" not in st:
