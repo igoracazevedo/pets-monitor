@@ -93,9 +93,28 @@ export default function Inicio({ admin }: { admin: boolean }) {
           ))}
         </ul>
       ) : ultimaPessoa ? (
-        <p className="text-sm text-slate-600">
-          Ninguém nas câmeras agora. Última vez: <strong className="text-slate-900">{nomeCam(ultimaPessoa.camera_id)}</strong>, {haQuanto(ultimaPessoa.ultima_vez)}.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-slate-600">Ninguém nas câmeras agora. Últimas vezes que apareceram:</p>
+          <ul className="space-y-2">
+            {dados.gente.slice(0, 3).map((g) => (
+              <li key={g.camera_id} className="flex items-center gap-3">
+                {g.snapshot_path && dados.fotos[g.snapshot_path] && (
+                  <button type="button" className="shrink-0" onClick={() => abrir([{ id: g.camera_id, url: dados.fotos[g.snapshot_path!], titulo: g.quem || 'Pessoa', legenda: `${nomeCam(g.camera_id)} · ${dataHora(g.ultima_vez ?? g.foto_em ?? '')}` }])} aria-label="Ver foto">
+                    <img src={dados.fotos[g.snapshot_path]} alt="" className="h-12 w-20 rounded-xl object-cover" />
+                  </button>
+                )}
+                <p className="min-w-0 text-sm text-slate-700">
+                  <strong className="text-slate-900">{nomeCam(g.camera_id)}</strong>
+                  {g.quem ? ` · ${g.quem}` : ''}
+                  <br />
+                  <span className="text-[12px] text-slate-500">
+                    {dataHora(g.ultima_vez ?? '')} · {haQuanto(g.ultima_vez)}
+                  </span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
         <p className="text-sm text-slate-500">Nenhuma pessoa vista nas câmeras ainda.</p>
       )}
@@ -250,21 +269,22 @@ export default function Inicio({ admin }: { admin: boolean }) {
                   </span>
                 )}
               </div>
-              {pos?.snapshot_path && dados.fotos[pos.snapshot_path] && (
-                <button type="button" className="block w-full" onClick={() => abrir([{ id: pet.id, url: dados.fotos[pos.snapshot_path!], titulo: pet.nome, legenda: `${c?.nome ?? 'Câmera'} · foto de ${dataHora(pos.foto_em ?? pos.visto_em)}` }])} aria-label={`Ver foto de ${pet.nome}`}>
-                  <img src={dados.fotos[pos.snapshot_path]} alt={`${pet.nome} na última posição`} className="aspect-video w-full object-cover" />
-                </button>
-              )}
               {pos && (
-                <div className="flex items-center justify-between gap-2 px-4 py-2 text-[11px] text-slate-500">
-                  <p>
-                    Vista {haQuanto(pos.visto_em)} · foto de {dataHora(pos.foto_em ?? pos.visto_em)}
-                  </p>
-                  {admin && (
-                    <button className="shrink-0 font-semibold text-rose-600" onClick={() => void naoEPet(pos)}>
-                      Não é ela
+                <div className="flex items-center gap-3 px-4 pb-3">
+                  {pos.snapshot_path && dados.fotos[pos.snapshot_path] && (
+                    <button type="button" className="shrink-0" onClick={() => abrir([{ id: pet.id, url: dados.fotos[pos.snapshot_path!], titulo: pet.nome, legenda: `${c?.nome ?? 'Câmera'} · foto de ${dataHora(pos.foto_em ?? pos.visto_em)}` }])} aria-label={`Ver foto de ${pet.nome}`}>
+                      <img src={dados.fotos[pos.snapshot_path]} alt={`${pet.nome} na última posição`} className="h-16 w-28 rounded-xl object-cover" />
                     </button>
                   )}
+                  <div className="min-w-0 flex-1 text-[12px] text-slate-500">
+                    <p>Vista {haQuanto(pos.visto_em)}</p>
+                    <p>Foto de {dataHora(pos.foto_em ?? pos.visto_em)}</p>
+                    {admin && (
+                      <button className="mt-1 font-semibold text-rose-600" onClick={() => void naoEPet(pos)}>
+                        Não é ela
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </article>
