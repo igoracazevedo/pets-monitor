@@ -38,5 +38,7 @@ def carregar_cameras(arquivo: str | Path) -> list[dict]:
             if usuario and "@" not in url:  # coloca o login na URL (codificado)
                 url = url.replace("rtsp://", f"rtsp://{quote(usuario, safe='')}:{quote(senha, safe='')}@", 1)
             # câmera que "trava se reconectar a cada foto": mantém a conexão aberta
-            out.append({"nome": nome, "ambiente": nome, "fonte": "rtsp_continuo", "url": url})
+            # continuo=nao: conecta só na hora da foto (NVR aguenta; poupa o processador do PC)
+            fonte = "rtsp" if (c.get("continuo", "sim").strip().lower() in ("nao", "não", "n", "0", "false")) else "rtsp_continuo"
+            out.append({"nome": nome, "ambiente": nome, "fonte": fonte, "url": url})
     return out
