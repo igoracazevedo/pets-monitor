@@ -260,6 +260,11 @@ export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: s
               </li>
             ))}
           </ul>
+          {onIr && (
+            <button className="text-[12px] font-semibold text-cyan-800" onClick={() => onIr('eventos')}>
+              Ver todos os eventos e gráficos →
+            </button>
+          )}
         </div>
       )}
       <div className="grid gap-4 sm:grid-cols-2">

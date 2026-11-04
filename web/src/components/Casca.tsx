@@ -8,15 +8,16 @@ export type AbaDef = { id: string; nome: string; Icone: LucideIcon; ajuda: strin
 
 const COR = '#0e7490'
 const COR_MENU = '#074b5e'
-const VERSAO = import.meta.env.VITE_COMMIT?.slice(0, 7) ?? 'local'
+const hora = new Date(__APP_COMPILACAO__).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
-function Avatar({ sessao }: { sessao: Session }) {
+function Avatar({ sessao, grande }: { sessao: Session; grande?: boolean }) {
+  const tam = grande ? 'h-12 w-12' : 'h-9 w-9'
   const meta = (sessao.user.user_metadata ?? {}) as { avatar_url?: string; picture?: string; full_name?: string; name?: string }
   const url = meta.avatar_url ?? meta.picture
   const nome = meta.full_name ?? meta.name ?? sessao.user.email ?? 'U'
-  if (url) return <img src={url} alt="" referrerPolicy="no-referrer" className="h-9 w-9 rounded-full border-2 border-white/20 object-cover" />
+  if (url) return <img src={url} alt="" referrerPolicy="no-referrer" className={`${tam} rounded-full border-2 border-white/20 object-cover`} />
   const iniciais = nome.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('')
-  return <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/20 bg-[#0b3a49] text-[12px] font-bold text-white">{iniciais}</span>
+  return <span className={`flex ${tam} items-center justify-center rounded-full border-2 border-white/20 bg-[#0b3a49] text-[12px] font-bold text-white`}>{iniciais}</span>
 }
 
 /** Moldura do app no padrão IAZ: topo colorido com avatar/menu, pílula central e ajuda; folha curvada com atalhos em squircles. */
@@ -46,14 +47,20 @@ export function Casca({ sessao, abas, aba, onAba, children }: { sessao: Session;
             </button>
             {menu && (
               <div className="absolute left-0 top-12 z-50 w-64 overflow-hidden rounded-2xl border border-white/10 text-white shadow-xl" style={{ background: COR_MENU }}>
-                <div className="border-b border-white/10 px-4 py-3">
-                  <p className="font-bold">{nome}</p>
-                  <p className="truncate text-[12px] text-white/60">{sessao.user.email}</p>
+                <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+                  <Avatar sessao={sessao} grande />
+                  <div className="min-w-0">
+                    <p className="truncate font-bold">{nome}</p>
+                    <p className="truncate text-[12px] text-white/60">{sessao.user.email}</p>
+                  </div>
                 </div>
                 <button onClick={() => void supabase.auth.signOut()} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/10">
                   <LogOut size={16} strokeWidth={1.9} /> Sair
                 </button>
-                <p className="border-t border-white/10 px-4 py-2 text-[11px] text-white/50">Pets Monitor IAZ · build {VERSAO}</p>
+                <div className="border-t border-white/10 px-4 py-2 text-[11px] leading-relaxed text-white/50">
+                  <p>Pets Monitor IAZ · versão {__APP_VERSAO__}</p>
+                  <p>Compilação {__APP_COMMIT__} · {hora}</p>
+                </div>
               </div>
             )}
           </div>
