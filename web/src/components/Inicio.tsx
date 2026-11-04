@@ -80,6 +80,24 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
   return out
 }
 
+const NEGACAO = /\b(nao|sem|nenhum|nenhuma|nada|nem|nunca)\b/
+
+/** "coco no Banheiro" ensina coco; "não tem coco" / "sem xixi" é negação e ensina "limpo" (senão a IA aprenderia o contrário do que foi escrito). */
+function rotuloDoTexto(t: string): { rotulo?: 'xixi' | 'coco' | 'limpo'; negou?: string; duvida?: boolean } {
+  const achados = (['xixi', 'coco', 'limpo'] as const).flatMap((r) => {
+    const m = new RegExp(`\\b${r}\\b`).exec(t)
+    if (!m) return []
+    const antes = t.slice(0, m.index).split(/[,;.]| mas | so | apenas /).pop() ?? ''
+    return [{ r, negado: NEGACAO.test(antes) }]
+  })
+  const positivo = achados.find((a) => !a.negado)
+  if (positivo) return { rotulo: positivo.r }
+  const sujeira = achados.filter((a) => a.negado && a.r !== 'limpo')
+  if (sujeira.length) return { rotulo: 'limpo', negou: sujeira.map((a) => a.r).join(' nem ') }
+  if (achados.some((a) => a.negado)) return { duvida: true } // "não está limpo": falta dizer o que tem
+  return {}
+}
+
 export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: string) => void }) {
   const [buscando, setBuscando] = useState(false)
   const [texto, setTexto] = useState('')
@@ -224,7 +242,11 @@ export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: s
       await registrarAgua(t)
       return
     }
-    const rotulo = (['xixi', 'coco', 'limpo'] as const).find((r) => new RegExp(`\\b${r}\\b`).test(t))
+    const { rotulo, negou, duvida } = rotuloDoTexto(t)
+    if (duvida) {
+      setResposta('Entendi que o tapete não está limpo. Está com xixi ou com coco? Escreva, por exemplo: "coco no Banheiro".')
+      return
+    }
     if (rotulo) {
       const bs = dados.cams.filter((c) => sem(c.nome).includes('banheiro'))
       const cam = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome))) ?? (bs.length === 1 ? bs[0] : undefined)
@@ -232,7 +254,7 @@ export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: s
         setResposta(`Qual câmera? Escreva, por exemplo: "${rotulo} no ${bs[0]?.nome ?? 'Banheiro'}".`)
         return
       }
-      await pedir({ tipo: 'ensinar_banheiro', camera_id: cam.id, rotulo }, `Ensinando "${rotulo}" na câmera ${cam.nome}…`)
+      await pedir({ tipo: 'ensinar_banheiro', camera_id: cam.id, rotulo }, negou ? `Entendi que não tem ${negou}: ensinando "limpo" na câmera ${cam.nome}…` : `Ensinando "${rotulo}" na câmera ${cam.nome}…`)
       return
     }
     const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))
