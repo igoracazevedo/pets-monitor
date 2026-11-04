@@ -328,8 +328,10 @@ def cmd_sondar(args):
         except Exception:
             pass
     print(f"Resposta da câmera em {args.ip}:{args.porta} (o que ela diz de cada caminho):")
-    for c in ("/stream1", "/stream2"):
-        r = _descrever(args.ip, args.porta, c, args.usuario, args.senha)
+    for c in CAMINHOS_RTSP:
+        r = _descrever(args.ip, args.porta, c, args.usuario, args.senha, timeout=4.0)
+        if " 404" in r["status"] and c not in ("/stream1", "/stream2"):
+            continue  # caminho que não existe: não polui a lista
         print(f"  {c}: {r['status']}" + (f" (login {r['login']})" if r["login"] else ""))
         for f in r["formatos"]:
             print(f"      {f}")
