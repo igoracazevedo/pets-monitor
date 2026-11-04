@@ -10,7 +10,7 @@ type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string
 /** Fotos que ilustram os avisos: a mais recente de cada câmera do banheiro e o último quadro das câmeras sem sinal. */
 function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[] {
   const ultimas = new Map<string, string>()
-  for (const e of ev) if (e.snapshot_path && !ultimas.has(e.camera_id)) ultimas.set(e.camera_id, e.snapshot_path)
+  for (const e of ev) if (e.snapshot_path && !ultimas.has(`${e.camera_id}|${e.tipo}`)) ultimas.set(`${e.camera_id}|${e.tipo}`, e.snapshot_path)
   const quadros = cams.filter((c) => c.ultimo_quadro_path && (c.ultimo_status === 'erro' || ev.some((e) => e.camera_id === c.id))).map((c) => c.ultimo_quadro_path)
   return [...ultimas.values(), ...quadros]
 }
@@ -51,7 +51,7 @@ const lista = (n: string[]) => (n.length > 1 ? `${n.slice(0, -1).join(', ')} e $
 function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined): Aviso[] {
   const out: Aviso[] = []
   const porCamera = new Map<string, EventoBanheiro[]>()
-  for (const e of d.banheiro) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
+  for (const e of d.banheiro.filter((x) => x.tipo !== 'agua')) porCamera.set(e.camera_id, [...(porCamera.get(e.camera_id) ?? []), e])
   for (const [cid, evs] of porCamera) {
     const nome = cam(cid)?.nome ?? 'Banheiro'
     const iLimpo = evs.findIndex((e) => e.tipo === 'limpo') // eventos vêm do mais novo para o mais antigo
@@ -63,6 +63,11 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
     const tipos = ['xixi', 'coco'].filter((t) => sujos.some((e) => e.tipo === t)).map((t) => (t === 'coco' ? 'cocô' : 'xixi'))
     const quem = [...new Set(sujos.map((e) => d.pets.find((p) => p.id === e.pet_id)?.nome).filter((n): n is string => !!n))]
     out.push({ texto: `${nome}: sujo de ${tipos.join(' e ')}${quem.length ? `, feito por ${lista(quem)}` : ', não sei quem fez'}. Último às ${dataHora(sujos[0].visto_em)}.`, tom: 'alerta', foto: sujos.find((e) => e.snapshot_path)?.snapshot_path ?? cam(cid)?.ultimo_quadro_path, quando: sujos[0].visto_em, titulo: nome })
+  }
+  const agua = d.banheiro.find((e) => e.tipo === 'agua' && Date.now() - new Date(e.visto_em).getTime() < 86400_000)
+  if (agua) {
+    const quem = d.pets.find((p) => p.id === agua.pet_id)?.nome
+    out.push({ texto: `${quem ?? 'Uma das cachorras'} bebeu água às ${dataHora(agua.visto_em)}.`, tom: 'ok', foto: agua.snapshot_path, quando: agua.visto_em, titulo: quem ? `${quem} bebendo água` : 'Bebendo água' })
   }
   for (const c of d.cams) if (c.ativo && c.ultimo_status === 'erro') out.push({ texto: `Câmera ${c.nome} sem sinal${c.ultima_leitura ? ` desde ${dataHora(c.ultima_leitura)}` : ''}.`, tom: 'erro', foto: c.ultimo_quadro_path, quando: c.ultima_leitura ?? undefined, titulo: c.nome })
   return out

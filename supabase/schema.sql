@@ -271,13 +271,13 @@ create table if not exists public.pm_banheiro_amostras (
 create table if not exists public.pm_banheiro_eventos (
   id uuid primary key default gen_random_uuid(),
   camera_id uuid not null references public.pm_cameras(id) on delete cascade,
-  tipo text not null check (tipo in ('xixi', 'coco', 'limpo')),
+  tipo text not null check (tipo in ('xixi', 'coco', 'limpo', 'agua')),
   pet_id uuid references public.pm_pets(id) on delete set null,
   snapshot_path text,
   visto_em timestamptz not null default now()
 );
 alter table public.pm_banheiro_eventos drop constraint if exists pm_banheiro_eventos_tipo_check;
-alter table public.pm_banheiro_eventos add constraint pm_banheiro_eventos_tipo_check check (tipo in ('xixi', 'coco', 'limpo'));
+alter table public.pm_banheiro_eventos add constraint pm_banheiro_eventos_tipo_check check (tipo in ('xixi', 'coco', 'limpo', 'agua'));
 create index if not exists pm_banheiro_eventos_idx on public.pm_banheiro_eventos (visto_em desc);
 alter table public.pm_banheiro_amostras enable row level security;
 alter table public.pm_banheiro_eventos enable row level security;

@@ -73,6 +73,7 @@ class Varredura:
 
         self.banheiro = Banheiro(db)
         self.estado_banheiro: dict[str, str] = {}
+        self.ultima_agua: dict[str, float] = {}
         from .notificar import Notificador
 
         self.notificador = Notificador(db) if hasattr(db, "assinaturas_push") else None
@@ -259,6 +260,7 @@ class Varredura:
 
         if "banheiro" in _sem_acento(nome):
             try:
+                self.vigiar_agua(cid, nome, frame, achados)
                 self.vigiar_banheiro(cid, nome, frame, dets)
             except Exception as e:
                 print(f"  banheiro {nome}: {e}", flush=True)
@@ -321,6 +323,33 @@ class Varredura:
         if n_pessoas:
             nomes = (nomes + ", " if nomes else "") + (", ".join(quem) + (" + " if quem and desconhecidas else "") if quem else "") + (f"{desconhecidas} pessoa(s)" if desconhecidas or not quem else "")
         return f"{nome}: {nomes or 'ninguém'}"
+
+    def vigiar_agua(self, cid: str, nome: str, frame, achados):
+        """Bicho com o corpo em cima da zona da vasilha de água (config `zona_agua`: x, y, largura, altura de 0 a 1) = bebeu água."""
+        zx, zy, zw, zh = self.cfg.get("zona_agua", [0.42, 0.82, 0.26, 0.18])
+        h, w = frame.shape[:2]
+        for d, p in achados:
+            if d.especie == "pessoa":
+                continue
+            x1, y1, x2, y2 = (d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h)
+            inter = max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy))
+            if inter < 0.35 * zw * zh:
+                continue
+            chave = p.pet_id or f"?{cid}"
+            if time.time() - self.ultima_agua.get(chave, 0) < 600:  # uma vez a cada 10 min por bicho
+                continue
+            self.ultima_agua[chave] = time.time()
+            pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
+            foto = f"avistamentos/{datetime.now():%Y/%m/%d}/agua-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
+            self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
+            self.db.evento_banheiro({"camera_id": cid, "tipo": "agua", "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} bebeu água", flush=True)
+            if self.notificador and self.notificador.ativo:
+                titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
+                try:
+                    self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"agua-{int(time.time())}")
+                except Exception as e:
+                    print(f"  aviso: {e}", flush=True)
 
     def vigiar_banheiro(self, cid: str, nome: str, frame, dets):
         """Câmera do banheiro: com o tapete livre (sem bicho nem gente), vê se tem xixi ou coco novo e registra quem foi."""

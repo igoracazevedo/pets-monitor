@@ -394,3 +394,31 @@ def test_banheiro():
 
 
 test_banheiro()
+
+
+def test_agua():
+    import numpy as np
+    from pets_agent.detect import Deteccao
+    from pets_agent.varredura import Varredura
+
+    class Pal:
+        pet_id = "p1"
+
+    class DB:
+        l = []
+        def enviar_foto(s, c, b): pass
+        def evento_banheiro(s, r): s.l.append(r)
+    v = Varredura.__new__(Varredura)
+    v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}
+    v.pets = [{"id": "p1", "nome": "Bebela"}]
+    f = np.zeros((480, 640, 3), np.uint8)
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (100, 100, 200, 200)), Pal())])
+    assert not v.db.l  # longe da vasilha
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (250, 380, 420, 480)), Pal())])
+    assert v.db.l and v.db.l[0]["tipo"] == "agua" and v.db.l[0]["pet_id"] == "p1"
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (250, 380, 420, 480)), Pal())])
+    assert len(v.db.l) == 1  # não repete em 10 min
+    print("água: Bebela bebeu água registrado uma vez: ok")
+
+
+test_agua()
