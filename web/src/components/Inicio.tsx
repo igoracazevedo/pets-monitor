@@ -7,12 +7,19 @@ import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
 type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[]; banheiro: EventoBanheiro[] }
 
+/** Exemplos ensinados pelo comando ("xixi no Banheiro") ficam em banheiro/ e não são ocorrências de verdade. */
+const exemplo = (e: EventoBanheiro) => !!e.snapshot_path?.startsWith('banheiro/')
+const TEXTO_EVENTO = { xixi: 'fez xixi', coco: 'fez cocô', agua: 'bebeu água' } as const
+const textoEvento = (e: EventoBanheiro, nome: string | undefined) =>
+  e.tipo === 'limpo' ? 'Tapete limpo' : nome ? `${nome} ${TEXTO_EVENTO[e.tipo]}` : e.tipo === 'agua' ? 'Uma das cachorras bebeu água' : `${e.tipo === 'coco' ? 'Cocô' : 'Xixi'} (não sei quem fez)`
+
 /** Fotos que ilustram os avisos: a mais recente de cada câmera do banheiro e o último quadro das câmeras sem sinal. */
 function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[] {
   const ultimas = new Map<string, string>()
   for (const e of ev) if (e.snapshot_path && !ultimas.has(`${e.camera_id}|${e.tipo}`)) ultimas.set(`${e.camera_id}|${e.tipo}`, e.snapshot_path)
   const quadros = cams.filter((c) => c.ultimo_quadro_path && (c.ultimo_status === 'erro' || ev.some((e) => e.camera_id === c.id))).map((c) => c.ultimo_quadro_path)
-  return [...ultimas.values(), ...quadros]
+  const recentes = ev.filter((e) => !exemplo(e)).slice(0, 20).map((e) => e.snapshot_path)
+  return [...ultimas.values(), ...quadros, ...recentes]
 }
 
 async function carregar(): Promise<Dados> {
@@ -78,6 +85,7 @@ export default function Inicio({ admin }: { admin: boolean }) {
   const [texto, setTexto] = useState('')
   const [comandando, setComandando] = useState(false)
   const [resposta, setResposta] = useState('')
+  const [verTodos, setVerTodos] = useState(false)
   const { abrir, janela } = useVisualizador()
   const { dados, erro, carregando, recarregar } = useDados(carregar, { pets: [], pos: [], cams: [], fotos: {}, perfis: {}, desconhecidos: 0, gente: [], banheiro: [] })
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
@@ -215,6 +223,30 @@ export default function Inicio({ admin }: { admin: boolean }) {
 
   const cam = (id: string | null) => dados.cams.find((c) => c.id === id)
   const avisos = montarAvisos(dados, cam)
+  const reais = dados.banheiro.filter((e) => !exemplo(e))
+  const ult24 = reais.filter((e) => Date.now() - new Date(e.visto_em).getTime() < 86400_000)
+  const conta = (t: EventoBanheiro['tipo']) => ult24.filter((e) => e.tipo === t).length
+  const nomePet = (id: string | null) => dados.pets.find((p) => p.id === id)?.nome
+  const porPet = [...dados.pets.map((p) => ({ id: p.id as string | null, nome: p.nome })), { id: null, nome: 'Sem identificar' }]
+    .map((q) => ({ nome: q.nome, xixi: ult24.filter((e) => e.pet_id === q.id && e.tipo === 'xixi').length, coco: ult24.filter((e) => e.pet_id === q.id && e.tipo === 'coco').length, agua: ult24.filter((e) => e.pet_id === q.id && e.tipo === 'agua').length }))
+    .filter((q) => q.xixi + q.coco + q.agua > 0)
+  const linhaEvento = (e: EventoBanheiro) => (
+    <li key={e.id} className="flex items-center gap-3 py-2">
+      {e.snapshot_path && dados.fotos[e.snapshot_path] ? (
+        <button type="button" className="shrink-0" onClick={() => abrir([{ id: e.id, url: dados.fotos[e.snapshot_path!], titulo: textoEvento(e, nomePet(e.pet_id)), legenda: `${cam(e.camera_id)?.nome ?? ''} · ${dataHora(e.visto_em)}` }])} aria-label="Ver foto">
+          <img src={dados.fotos[e.snapshot_path]} alt="" className="h-12 w-20 rounded-xl object-cover" />
+        </button>
+      ) : (
+        <span className="h-12 w-20 shrink-0 rounded-xl bg-slate-100" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-slate-900">{textoEvento(e, nomePet(e.pet_id))}</p>
+        <p className="text-[12px] text-slate-500">
+          {dataHora(e.visto_em)} · {cam(e.camera_id)?.nome ?? ''}
+        </p>
+      </div>
+    </li>
+  )
   return (
     <div className="space-y-4">
       {janela}
@@ -255,6 +287,46 @@ export default function Inicio({ admin }: { admin: boolean }) {
           </ul>
         </div>
       )}
+      <section className="vidro space-y-2 p-4">
+        <h2 className="font-bold text-slate-900">Banheiro · últimas 24 h</h2>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {[
+            ['Xixi', conta('xixi')],
+            ['Cocô', conta('coco')],
+            ['Limpezas', conta('limpo')],
+            ['Água', conta('agua')],
+          ].map(([nome, n]) => (
+            <div key={nome as string} className="rounded-2xl bg-white/60 px-1 py-2">
+              <p className="text-xl font-extrabold text-cyan-800">{n}</p>
+              <p className="text-[11px] text-slate-600">{nome}</p>
+            </div>
+          ))}
+        </div>
+        {porPet.length > 0 && (
+          <ul className="space-y-0.5 text-[12px] text-slate-600">
+            {porPet.map((q) => (
+              <li key={q.nome}>
+                <strong className="text-slate-900">{q.nome}</strong>: {q.xixi} xixi · {q.coco} cocô · {q.agua} água
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="vidro p-4">
+        <h2 className="font-bold text-slate-900">Eventos do banheiro</h2>
+        {reais.length === 0 ? (
+          <p className="pt-1 text-sm text-slate-500">Nenhum evento ainda.</p>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-200/70">{(verTodos ? reais.slice(0, 20) : reais.slice(0, 1)).map(linhaEvento)}</ul>
+            {reais.length > 1 && (
+              <button className="mt-1 text-[12px] font-semibold text-cyan-800" onClick={() => setVerTodos(!verTodos)}>
+                {verTodos ? 'Recolher' : `Ver anteriores (${Math.min(reais.length, 20) - 1})`}
+              </button>
+            )}
+          </>
+        )}
+      </section>
       <div className="grid gap-4 sm:grid-cols-2">
         {dados.pets.map((pet) => {
           const pos = dados.pos.find((p) => p.pet_id === pet.id)

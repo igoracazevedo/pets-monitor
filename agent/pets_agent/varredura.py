@@ -326,7 +326,7 @@ class Varredura:
 
     def vigiar_agua(self, cid: str, nome: str, frame, achados):
         """Bicho com o corpo em cima da zona da vasilha de água (config `zona_agua`: x, y, largura, altura de 0 a 1) = bebeu água."""
-        zx, zy, zw, zh = self.cfg.get("zona_agua", [0.42, 0.82, 0.26, 0.18])
+        zx, zy, zw, zh = self.cfg.get("zona_agua", [0.12, 0.34, 0.09, 0.12])  # a vasilha rosa, à esquerda da câmera do banheiro
         h, w = frame.shape[:2]
         for d, p in achados:
             if d.especie == "pessoa":

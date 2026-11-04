@@ -17,6 +17,17 @@ class Deteccao:
     fraca: bool = False     # classe duvidosa (ex.: "urso de pelúcia"): só vale com confirmação pela cor
 
 
+def filtrar_protecao(caixas: list[tuple[tuple[int, int, int, int], float]], shape) -> list[tuple[int, int, int, int]]:
+    """Fica a caixa com certeza >= 0.45, ou a duvidosa (>= 0.25) que ocupe até 12% da imagem."""
+    h, w = shape[:2]
+    out = []
+    for (x1, y1, x2, y2), conf in caixas:
+        area = (x2 - x1) * (y2 - y1) / float(w * h)
+        if conf >= 0.45 or (conf >= 0.25 and area <= 0.12):
+            out.append((x1, y1, x2, y2))
+    return out
+
+
 def _iou(a, b) -> float:
     ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
     iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
@@ -77,9 +88,10 @@ class Detector:
         return sem_repetidas(refinadas)
 
     def pessoas_na_imagem(self, frame: np.ndarray, conf: float = 0.25) -> list[tuple[int, int, int, int]]:
-        """Caixas de TODA pessoa visível, mesmo com pouca certeza: é para esconder o corpo, então melhor sobrar do que faltar."""
+        """Caixas das pessoas a esconder. Pouca certeza só vale para caixa pequena (gente parcial); caixa grande e duvidosa
+        costuma ser cama, cobertor ou bicho de pelúcia, e esconderia a foto toda à toa."""
         res = self.modelo.predict(frame, imgsz=self.tamanho, conf=conf, classes=list(PESSOA), iou=0.85, verbose=False)[0]
-        return [tuple(int(v) for v in b.xyxy[0].tolist()) for b in res.boxes]
+        return filtrar_protecao([(tuple(int(v) for v in b.xyxy[0].tolist()), float(b.conf[0])) for b in res.boxes], frame.shape)
 
     def _separar(self, frame: np.ndarray, d: Deteccao) -> list[Deteccao]:
         """Animais deitados juntos saem numa caixa só. Amplia a região e procura de novo: se achar 2 ou mais, troca a caixa por elas."""

@@ -412,13 +412,27 @@ def test_agua():
     v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}
     v.pets = [{"id": "p1", "nome": "Bebela"}]
     f = np.zeros((480, 640, 3), np.uint8)
-    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (100, 100, 200, 200)), Pal())])
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (300, 300, 500, 400)), Pal())])
     assert not v.db.l  # longe da vasilha
-    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (250, 380, 420, 480)), Pal())])
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (90, 150, 155, 210)), Pal())])  # Mavi na vasilha rosa (foto real das 21:23)
     assert v.db.l and v.db.l[0]["tipo"] == "agua" and v.db.l[0]["pet_id"] == "p1"
-    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (250, 380, 420, 480)), Pal())])
+    v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (90, 150, 155, 210)), Pal())])
     assert len(v.db.l) == 1  # não repete em 10 min
     print("água: Bebela bebeu água registrado uma vez: ok")
 
 
 test_agua()
+
+
+def test_protecao_filtro():
+    from pets_agent.detect import filtrar_protecao
+
+    cama = ((250, 330, 660, 640), 0.31)      # caixa enorme e duvidosa (cama): não esconde a foto toda
+    pessoa = ((100, 50, 300, 600), 0.80)      # pessoa de verdade: esconde
+    parcial = ((10, 10, 90, 120), 0.30)       # pedaço pequeno e duvidoso: esconde
+    r = filtrar_protecao([cama, pessoa, parcial], (665, 876, 3))
+    assert pessoa[0] in r and parcial[0] in r and cama[0] not in r
+    print("proteção: cama não vira pessoa, gente de verdade continua escondida: ok")
+
+
+test_protecao_filtro()
