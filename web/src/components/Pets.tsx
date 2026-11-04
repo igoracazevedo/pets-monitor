@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { SeletorCor } from './SeletorCor'
+import { corPadraoPet, corValida } from '../lib/cores'
 import { Dog, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { recortarQuadrado, reduzirImagem, supabase, urlsDasFotos, urlsDosPets, type Pet, type PetFoto } from '../lib/supabase'
 import { Galeria } from './Galeria'
@@ -94,6 +96,12 @@ export default function Pets({ admin }: { admin: boolean }) {
     }
   }
 
+  async function mudarCor(p: Pet, cor: string) {
+    const { error } = await supabase.from('pm_pets').update({ cor }).eq('id', p.id)
+    if (error) falha(error)
+    await recarregar()
+  }
+
   async function alternarAviso(p: Pet, v: boolean) {
     const { error } = await supabase.from('pm_pets').update({ notificar: v }).eq('id', p.id)
     if (error) falha(error)
@@ -133,7 +141,7 @@ export default function Pets({ admin }: { admin: boolean }) {
       <input ref={inputCamera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
       <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ''; if (f.length && alvo.current) void enviar(alvo.current, f) }} />
 
-      {dados.pets.map((p) => {
+      {dados.pets.map((p, idx) => {
         const fotos = dados.fotos.filter((f) => f.pet_id === p.id)
         return (
           <section key={p.id} className="vidro space-y-3 p-4">
@@ -182,6 +190,7 @@ export default function Pets({ admin }: { admin: boolean }) {
               </label>
             )}
 
+            {admin && <SeletorCor valor={corValida(p.cor) ? p.cor : corPadraoPet(idx)} onMudar={(c) => void mudarCor(p, c)} />}
             {admin && (
               <label className="flex items-center gap-2 text-[12px] text-slate-600">
                 <input type="checkbox" checked={p.notificar} onChange={(e) => void alternarAviso(p, e.target.checked)} />

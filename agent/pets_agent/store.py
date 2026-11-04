@@ -117,6 +117,9 @@ class Supabase:
     def presenca(self, linha: dict):
         self._rest("POST", "pm_presenca", {"on_conflict": "camera_id"}, json=linha, extra={"Prefer": "resolution=merge-duplicates"})
 
+    def zonas(self) -> list[dict]:
+        return self._rest("GET", "pm_zonas", {"select": "*"})
+
     def ignorar(self) -> list[dict]:
         return self._rest("GET", "pm_ignorar", {"select": "*"})
 

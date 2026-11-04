@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 
-export type ItemFoto = { id: string; url: string; titulo?: string; legenda?: string; extra?: unknown }
+export type Local = { caixa: Caixa; rotulo: string; cor: string }
+export type ItemFoto = { id: string; url: string; titulo?: string; legenda?: string; extra?: unknown; locais?: Local[] }
 export type Caixa = { x: number; y: number; w: number; h: number }
-export type Marcacao = { opcoes: { valor: string; nome: string }[]; onMarcar: (item: ItemFoto, caixa: Caixa, valor: string) => Promise<void> }
+export type Opcao = { valor: string; nome: string; grupo?: string }
+export type Marcacao = { opcoes: Opcao[]; onMarcar: (item: ItemFoto, caixa: Caixa, valor: string) => Promise<void> }
 export type AcaoVisualizador = { rotulo: string; ocupado: boolean; onClick: () => void }
 
 /** Foto em tela cheia (no celular as miniaturas ficam pequenas demais). Setas/arrastar para trocar, pinça para ampliar. */
@@ -13,6 +15,7 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
   const [pendente, setPendente] = useState<Caixa | null>(null)
   const [escolha, setEscolha] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const [verLocais, setVerLocais] = useState(true)
   const [feitas, setFeitas] = useState<{ caixa: Caixa; nome: string; foto: string }[]>([])
   const areaImg = useRef<HTMLDivElement>(null)
   const miolo = useRef<HTMLDivElement>(null)
@@ -79,6 +82,11 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
       >
         <div ref={areaImg} className="relative inline-block max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
           <img src={item.url} alt={item.titulo ?? ''} className="block max-w-full object-contain" style={{ touchAction: modo ? 'none' : 'pinch-zoom', maxHeight: altura || undefined }} draggable={false} />
+          {verLocais && (item.locais ?? []).map((l, i) => (
+            <div key={`l${i}`} className="pointer-events-none absolute border-2 border-dashed" style={{ left: `${l.caixa.x * 100}%`, top: `${l.caixa.y * 100}%`, width: `${l.caixa.w * 100}%`, height: `${l.caixa.h * 100}%`, borderColor: l.cor }}>
+              <span className="absolute left-0 top-full mt-0.5 whitespace-nowrap rounded px-1 text-[11px] font-bold text-white shadow" style={{ background: l.cor }}>{l.rotulo}</span>
+            </div>
+          ))}
           {feitas.filter((f) => f.foto === item.id).map((f, i) => (
             <div key={i} className="pointer-events-none absolute border-2 border-emerald-400" style={{ left: `${f.caixa.x * 100}%`, top: `${f.caixa.y * 100}%`, width: `${f.caixa.w * 100}%`, height: `${f.caixa.h * 100}%` }}>
               <span className="absolute -top-5 left-0 rounded bg-emerald-500 px-1 text-[11px] font-bold">{f.nome}</span>
@@ -132,12 +140,22 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
           {pendente ? (
             <div className="flex items-center gap-2">
               <select value={escolha} onChange={(e) => setEscolha(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-white px-2 py-2 text-slate-900">
-                <option value="">Quem é?</option>
-                {marcar.opcoes.map((o) => (
-                  <option key={o.valor} value={o.valor}>
-                    {o.nome}
-                  </option>
-                ))}
+                <option value="">Quem é? / Qual local?</option>
+                {[...new Set(marcar.opcoes.map((o) => o.grupo ?? ''))].map((g) => {
+                  const itensG = marcar.opcoes.filter((o) => (o.grupo ?? '') === g)
+                  const opts = itensG.map((o) => (
+                    <option key={o.valor} value={o.valor}>
+                      {o.nome}
+                    </option>
+                  ))
+                  return g ? (
+                    <optgroup key={g} label={g}>
+                      {opts}
+                    </optgroup>
+                  ) : (
+                    opts
+                  )
+                })}
               </select>
               <button
                 disabled={!escolha || salvando}
@@ -167,6 +185,11 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
       )}
       <div className="flex items-center justify-between gap-3 px-4 py-3 text-[12px] text-white/70" onClick={(e) => e.stopPropagation()}>
         <span className="shrink-0 whitespace-nowrap">{itens.length > 1 ? `${indice + 1} de ${itens.length}` : ''}</span>
+        {itens.some((x) => x.locais?.length) && (
+          <button className={`rounded-full px-3 py-2 text-[13px] font-bold ${verLocais ? 'bg-white/90 text-black' : 'bg-white/15 text-white'}`} onClick={() => setVerLocais((v) => !v)}>
+            Locais
+          </button>
+        )}
         {marcar && (
           <button className={`rounded-full px-3 py-2 text-[13px] font-bold sm:px-4 sm:text-sm ${modo ? 'bg-amber-300 text-black' : 'bg-white/15 text-white'}`} onClick={() => { setModo((m) => !m); setPendente(null); setArrasto(null) }}>
             {modo ? 'Terminar marcação' : 'Marcar quem é'}

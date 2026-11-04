@@ -294,4 +294,21 @@ create policy pm_banheiro_eventos_admin on public.pm_banheiro_eventos for all to
 drop policy if exists pm_snapshots_enviar on storage.objects;
 create policy pm_snapshots_enviar on storage.objects for insert to authenticated with check (bucket_id = 'pm-snapshots' and public.pm_is_admin());
 
+-- Cor de cada pet/pessoa (marcação nas telas e nas fotos) e locais marcados nas fotos (banheiro, bebedouro, cama)
+alter table public.pm_pets add column if not exists cor text;
+alter table public.pm_pessoas add column if not exists cor text;
+create table if not exists public.pm_zonas (
+  id uuid primary key default gen_random_uuid(),
+  camera_id uuid not null references public.pm_cameras(id) on delete cascade,
+  tipo text not null check (tipo in ('banheiro', 'bebedouro', 'cama')),
+  pet_id uuid references public.pm_pets(id) on delete cascade,
+  x numeric(5, 4) not null, y numeric(5, 4) not null, w numeric(5, 4) not null, h numeric(5, 4) not null,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_zonas enable row level security;
+drop policy if exists pm_zonas_ler on public.pm_zonas;
+create policy pm_zonas_ler on public.pm_zonas for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_zonas_admin on public.pm_zonas;
+create policy pm_zonas_admin on public.pm_zonas for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
+
 notify pgrst, 'reload schema';

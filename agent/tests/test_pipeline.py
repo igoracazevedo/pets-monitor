@@ -466,3 +466,33 @@ def test_agua_quarto():
 
 
 test_agua_quarto()
+
+
+def test_cores_e_locais():
+    import numpy as np
+    from pets_agent import varredura as V
+    from pets_agent.detect import Deteccao
+
+    class DB:
+        l = []
+        def pessoas(s): return [{"nome": "Igor"}, {"nome": "Rafa", "cor": "#112233"}]
+        def enviar_foto(s, c, b): pass
+        def evento_banheiro(s, r): s.l.append(r)
+    v = V.Varredura.__new__(V.Varredura)
+    v.db = DB(); v.pets = [{"nome": "Bebela", "cor": "#ff0000"}, {"nome": "Mavi"}]
+    v.atualizar_cores()
+    assert V.CORES["Bebela"] == (0, 0, 255) and V.CORES["Mavi"] == V._bgr("#eb6834") and V.CORES["Igor"] == V._bgr("#e34948") and V.CORES["Rafa"] == (0x33, 0x22, 0x11)
+    img = V._anotar(np.zeros((100, 100, 3), np.uint8), [((10, 10, 60, 60), "Bebela")])
+    assert tuple(int(x) for x in img[10, 30]) == (0, 0, 255)  # a caixa usa a cor escolhida
+    # bebedouro marcado no app vale mais que o padrão e vale em qualquer câmera
+    class Pal: pet_id = "p1"
+    v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.notificador = None; v.ultima_agua = {}; v.caixa_agua = {}
+    v.pets = [{"id": "p1", "nome": "Mavi"}]
+    v.zonas = {"c1234567": [{"tipo": "bebedouro", "x": 0.7, "y": 0.1, "w": 0.1, "h": 0.1}]}
+    f = np.zeros((100, 100, 3), np.uint8)
+    v.vigiar_agua("c1234567", "Sala", f, [(Deteccao("dog", 0.9, (65, 5, 85, 25)), Pal())])
+    assert len(v.db.l) == 1
+    print("cores por pet/pessoa e bebedouro marcado no app: ok")
+
+
+test_cores_e_locais()

@@ -51,11 +51,24 @@ def _jpeg(frame: np.ndarray, largura: int) -> bytes:
     return buf.tobytes()
 
 
+PALETA = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+CORES: dict[str, tuple[int, int, int]] = {}  # nome -> cor BGR da marcação (escolhida no app)
+
+
+def _bgr(hexa: str) -> tuple[int, int, int]:
+    return int(hexa[5:7], 16), int(hexa[3:5], 16), int(hexa[1:3], 16)
+
+
+def _cor_valida(c) -> bool:
+    return isinstance(c, str) and len(c) == 7 and c[0] == "#" and all(x in "0123456789abcdefABCDEF" for x in c[1:])
+
+
 def _anotar(frame: np.ndarray, marcas: list[tuple[tuple[int, int, int, int], str]]) -> np.ndarray:
     img = frame.copy()
     for (x1, y1, x2, y2), texto in marcas:
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 98, 255), 3)
-        cv2.putText(img, texto, (x1 + 4, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 98, 255), 2, cv2.LINE_AA)
+        cor = CORES.get(texto, (0, 98, 255))
+        cv2.rectangle(img, (x1, y1), (x2, y2), cor, 3)
+        cv2.putText(img, texto, (x1 + 4, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.9, cor, 2, cv2.LINE_AA)
     return img
 
 
@@ -66,6 +79,7 @@ class Varredura:
         self.detector = detector
         self.pets = db.pets()
         self.ident = Identificador(self.pets, cfg["identificacao"]["pontuacao_minima"], cfg["identificacao"]["margem_minima"])
+        self.atualizar_cores()
         self.fixas = []
         for i, c in enumerate(cfg["cameras"]):
             ip = c.get("host") or c.get("url", "").split("@")[-1].split("/")[0].split(":")[0] or None
@@ -83,6 +97,8 @@ class Varredura:
 
         self.banheiro = Banheiro(db)
         self.estado_banheiro: dict[str, str] = {}
+        self.zonas: dict[str, list[dict]] = {}
+        self.ultimas_zonas = 0.0
         self.ultima_agua: dict[str, float] = {}
         self.caixa_agua: dict[str, tuple[float, tuple[int, int, int, int]]] = {}
         from .notificar import Notificador
@@ -118,8 +134,20 @@ class Varredura:
         except Exception as e:  # sem a proteção a imagem NÃO é enviada: melhor sem foto do que com a pessoa à mostra
             raise RuntimeError(f"não consegui proteger a imagem ({e})")
 
+    def atualizar_cores(self):
+        """Cor de cada pet/pessoa para a marcação nas fotos: a escolhida no app; sem escolha, a mesma regra do app (pets de frente para trás, pessoas de trás para frente)."""
+        CORES.clear()
+        for i, p in enumerate(self.pets):
+            CORES[p["nome"]] = _bgr(p["cor"] if _cor_valida(p.get("cor")) else PALETA[i % 8])
+        try:
+            for j, p in enumerate(self.db.pessoas()):
+                CORES[p["nome"]] = _bgr(p["cor"] if _cor_valida(p.get("cor")) else PALETA[7 - (j % 8)])
+        except Exception:
+            pass
+
     def recarregar_pets(self):
         self.pets = self.db.pets()
+        self.atualizar_cores()
         i = self.cfg["identificacao"]
         self.ident = Identificador(self.pets, i["pontuacao_minima"], i["margem_minima"])
 
@@ -195,6 +223,18 @@ class Varredura:
         except Exception as e:
             print(f"  reconhecimento: {e}", flush=True)
             return None
+
+    def carregar_zonas(self):
+        """Locais marcados no app (banheiro, bebedouro, cama de cada um)."""
+        if time.time() - self.ultimas_zonas < 120:
+            return
+        self.ultimas_zonas = time.time()
+        try:
+            self.zonas = {}
+            for z in self.db.zonas():
+                self.zonas.setdefault(z["camera_id"], []).append(z)
+        except Exception:
+            pass  # SQL ainda não rodado
 
     def atualizar_nomes(self):
         """Pega do banco o apelido e o liga/desliga de cada câmera (você muda no app)."""
@@ -273,7 +313,7 @@ class Varredura:
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 
-        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome):
+        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome) or any(z.get("tipo") == "bebedouro" for z in self.zonas.get(cid, [])):
             try:
                 self.vigiar_agua(cid, nome, frame, achados)
                 if "banheiro" in _sem_acento(nome):
@@ -342,18 +382,21 @@ class Varredura:
 
     def vigiar_agua(self, cid: str, nome: str, frame, achados):
         """Bicho com o corpo em cima da zona da vasilha de água (config `zona_agua`: x, y, largura, altura de 0 a 1) = bebeu água."""
-        zonas = {**ZONAS_AGUA, **{k.lower(): v for k, v in (self.cfg.get("zonas_agua") or {}).items()}}
-        chave_zona = next((k for k in sorted(zonas, key=len, reverse=True) if k in _sem_acento(nome)), None)
-        if not chave_zona:
-            return
-        zx, zy, zw, zh = zonas[chave_zona]
+        marcadas = [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "bebedouro"]
+        if marcadas:  # os bebedouros que você marcou nas fotos do Histórico valem mais que o padrão
+            lista = marcadas
+        else:
+            zonas = {**ZONAS_AGUA, **{k.lower(): v for k, v in (self.cfg.get("zonas_agua") or {}).items()}}
+            chave_zona = next((k for k in sorted(zonas, key=len, reverse=True) if k in _sem_acento(nome)), None)
+            if not chave_zona:
+                return
+            lista = [tuple(zonas[chave_zona])]
         h, w = frame.shape[:2]
         for d, p in achados:
             if d.especie == "pessoa":
                 continue
             x1, y1, x2, y2 = (d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h)
-            inter = max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy))
-            if inter < 0.35 * zw * zh:
+            if not any(max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy)) >= 0.35 * zw * zh for zx, zy, zw, zh in lista):
                 continue
             chave = p.pet_id or f"?{cid}"
             if time.time() - self.ultima_agua.get(chave, 0) < 600:  # uma vez a cada 10 min por bicho
@@ -511,6 +554,7 @@ class Varredura:
             self.ultimo.clear()
             self.ultimo_quadro.clear()
         self.atualizar_nomes()
+        self.carregar_zonas()
         saida = []
         for c, r in self.cameras:
             try:

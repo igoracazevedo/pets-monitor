@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet, type Zona } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { useVisualizador, type Caixa, type ItemFoto } from './Visualizador'
 import { dataHora, haQuanto } from '../lib/util'
+import { corPadraoPet, corValida } from '../lib/cores'
 
 const CINCO_MIN = 5 * 60 * 1000
 /** Mostra uma foto por câmera + quem (pet/pessoa) a cada 5 minutos: o resto é a mesma cena repetida. */
@@ -18,7 +19,7 @@ function semRepetidas(l: Avistamento[]): Avistamento[] {
   })
 }
 
-type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string> }
+type Dados = { pets: Pet[]; cams: Camera[]; lista: Avistamento[]; fotos: Record<string, string>; gente: Record<string, string>; zonas: Zona[] }
 
 export default function Historico({ admin }: { admin: boolean }) {
   const [pet, setPet] = useState('todos')
@@ -28,12 +29,12 @@ export default function Historico({ admin }: { admin: boolean }) {
       if (pet === 'pessoas') q = q.eq('especie', 'pessoa')
       else if (pet === 'desconhecido') q = q.is('pet_id', null).neq('especie', 'pessoa')
       else if (pet !== 'todos') q = q.eq('pet_id', pet)
-      const [pets, cams, lista, gente] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome')])
+      const [pets, cams, lista, gente, zonas] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome'), supabase.from('pm_zonas').select('*')])
       if (lista.error) throw new Error(lista.error.message)
       const l = semRepetidas((lista.data ?? []) as Avistamento[]).slice(0, 60)
-      return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)), gente: Object.fromEntries(((gente.data ?? []) as { id: string; nome: string }[]).map((g) => [g.id, g.nome])) }
+      return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)), gente: Object.fromEntries(((gente.data ?? []) as { id: string; nome: string }[]).map((g) => [g.id, g.nome])), zonas: (zonas.data ?? []) as Zona[] }
     },
-    { pets: [], cams: [], lista: [], fotos: {}, gente: {} },
+    { pets: [], cams: [], lista: [], fotos: {}, gente: {}, zonas: [] },
     20000,
   )
   async function naoEPet(a: Avistamento) {
@@ -109,6 +110,13 @@ export default function Historico({ admin }: { admin: boolean }) {
   /** Marcação feita à mão na foto (vários animais/pessoas na mesma imagem): vira registro do histórico e amostra de aprendizado. */
   async function marcarNaFoto(item: ItemFoto, caixa: Caixa, destino: string) {
     const a = item.extra as Avistamento
+    if (destino.startsWith('zona:')) {
+      const [, tipo, quem] = destino.split(':')
+      const z = await supabase.from('pm_zonas').insert({ camera_id: a.camera_id, tipo, pet_id: quem === 'todos' ? null : quem, x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) })
+      if (z.error) throw z.error
+      await recarregar()
+      return
+    }
     const [tipo, id] = destino.split(':')
     const pet = tipo === 'pet' ? dados.pets.find((p) => p.id === id) : undefined
     const box = { x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) }
@@ -133,12 +141,25 @@ export default function Historico({ admin }: { admin: boolean }) {
       await supabase.from('pm_correcoes').insert({ camera_id: a.camera_id, snapshot_path: a.snapshot_path, ...box, pet_id: tipo === 'pet' ? id : null, pessoa_id: tipo === 'pessoa' ? id : null })
     await recarregar()
   }
-  const opcoes = [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome })), ...Object.entries(dados.gente).map(([id, nome]) => ({ valor: `pessoa:${id}`, nome }))]
+  const TIPOS_ZONA = { banheiro: 'Banheiro', bebedouro: 'Bebedouro', cama: 'Cama' } as const
+  const corDoPet = (id: string | null) => {
+    const i = dados.pets.findIndex((p) => p.id === id)
+    return i < 0 ? '#9ca3af' : corValida(dados.pets[i].cor) ? dados.pets[i].cor! : corPadraoPet(i)
+  }
+  const rotuloZona = (z: Zona) => `${TIPOS_ZONA[z.tipo]} ${z.pet_id ? `da ${dados.pets.find((p) => p.id === z.pet_id)?.nome ?? '?'}` : '(das duas)'}`
+  const opcoes = [
+    ...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })),
+    ...Object.entries(dados.gente).map(([id, nome]) => ({ valor: `pessoa:${id}`, nome, grupo: 'Quem é' })),
+    ...(Object.keys(TIPOS_ZONA) as (keyof typeof TIPOS_ZONA)[]).flatMap((t) => [
+      ...dados.pets.map((p) => ({ valor: `zona:${t}:${p.id}`, nome: `${TIPOS_ZONA[t]} da ${p.nome}`, grupo: 'Marcar local' })),
+      { valor: `zona:${t}:todos`, nome: `${TIPOS_ZONA[t]} (das duas)`, grupo: 'Marcar local' },
+    ]),
+  ]
   const { abrir, janela } = useVisualizador(admin ? { opcoes, onMarcar: marcarNaFoto } : undefined)
   const verFoto = (a: Avistamento) => {
     const com = dados.lista.filter((x) => x.snapshot_path && dados.fotos[x.snapshot_path])
     abrir(
-      com.map((x) => ({ id: String(x.id), url: dados.fotos[x.snapshot_path!], titulo: nomePet(x.pet_id, x.especie, x.pessoa_id), legenda: `${nomeCam(x.camera_id)} · ${dataHora(x.visto_em)}`, extra: x })),
+      com.map((x) => ({ id: String(x.id), url: dados.fotos[x.snapshot_path!], titulo: nomePet(x.pet_id, x.especie, x.pessoa_id), legenda: `${nomeCam(x.camera_id)} · ${dataHora(x.visto_em)}`, extra: x, locais: dados.zonas.filter((z) => z.camera_id === x.camera_id).map((z) => ({ caixa: { x: Number(z.x), y: Number(z.y), w: Number(z.w), h: Number(z.h) }, rotulo: rotuloZona(z), cor: corDoPet(z.pet_id) })) })),
       Math.max(0, com.findIndex((x) => x.id === a.id)),
     )
   }
@@ -156,6 +177,26 @@ export default function Historico({ admin }: { admin: boolean }) {
         <option value="desconhecido">Não identificados</option>
         <option value="pessoas">Pessoas</option>
       </select>
+      {admin && dados.zonas.length > 0 && (
+        <details className="vidro px-4 py-2 text-[13px]">
+          <summary className="cursor-pointer font-semibold text-slate-800">Locais marcados ({dados.zonas.length})</summary>
+          <ul className="divide-y divide-slate-200/70 pt-1">
+            {dados.zonas.map((z) => (
+              <li key={z.id} className="flex items-center justify-between gap-2 py-1.5">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: corDoPet(z.pet_id) }} />
+                  <span className="truncate">
+                    {rotuloZona(z)} · {nomeCam(z.camera_id)}
+                  </span>
+                </span>
+                <button className="shrink-0 text-[12px] font-semibold text-rose-600" onClick={async () => { if (confirm('Remover este local?')) { await supabase.from('pm_zonas').delete().eq('id', z.id); await recarregar() } }}>
+                  Remover
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {carregando ? (
         <p className="p-6 text-center text-slate-500">Carregando…</p>
       ) : erro ? (

@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { SeletorCor } from './SeletorCor'
+import { corPadraoPessoa, corValida } from '../lib/cores'
 import { Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { reduzirImagem, supabase, urlsDasFotos, urlsDosPets, type Pessoa } from '../lib/supabase'
 import { Galeria } from './Galeria'
@@ -67,6 +69,12 @@ export default function Pessoas({ admin }: { admin: boolean }) {
     }
   }
 
+  async function mudarCor(p: Pessoa, cor: string) {
+    const { error } = await supabase.from('pm_pessoas').update({ cor }).eq('id', p.id)
+    if (error) falha(error)
+    await recarregar()
+  }
+
   async function alternarAviso(p: Pessoa, v: boolean) {
     const { error } = await supabase.from('pm_pessoas').update({ notificar: v }).eq('id', p.id)
     if (error) falha(error)
@@ -106,7 +114,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
       <input ref={inputCamera} type="file" accept="image/*" capture="user" hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
       <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); const id = alvo.current; e.target.value = ''; if (f.length && id) void enviar(id, f) }} />
 
-      {dados.pessoas.map((p) => {
+      {dados.pessoas.map((p, idx) => {
         const fotos = dados.fotos.filter((f) => f.pessoa_id === p.id)
         return (
           <section key={p.id} className="vidro space-y-3 p-4">
@@ -121,6 +129,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
                 <Trash2 size={16} />
               </button>
             </div>
+            <SeletorCor valor={corValida(p.cor) ? p.cor : corPadraoPessoa(idx)} onMudar={(c) => void mudarCor(p, c)} />
             <label className="flex items-center gap-2 text-[12px] text-slate-600">
               <input type="checkbox" checked={p.notificar} onChange={(e) => void alternarAviso(p, e.target.checked)} />
               Avisar no celular quando encontrar
