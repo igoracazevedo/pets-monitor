@@ -426,10 +426,13 @@ class Varredura:
             self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
             frase = "bebeu água" if tipo == "agua" else "comendo"
             print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}", flush=True)
-            if tipo == "agua" and self.notificador and self.notificador.ativo:
-                titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
+            if self.notificador and self.notificador.ativo:  # todo evento vai para o celular
+                if tipo == "agua":
+                    titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
+                else:
+                    titulo = f"{pet['nome']} comendo" if pet else "Uma das cachorras comendo"
                 try:
-                    self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"agua-{int(time.time())}")
+                    self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"{tipo}-{int(time.time())}")
                 except Exception as e:
                     print(f"  aviso: {e}", flush=True)
 
@@ -463,6 +466,11 @@ class Varredura:
             return
         if rot == "limpo":  # alguém limpou: o aviso da tela Início volta a "limpo"
             self.db.evento_banheiro({"camera_id": cid, "tipo": "limpo", "visto_em": agora()})
+            if self.notificador and self.notificador.ativo:
+                try:
+                    self.notificador.enviar("Tapete limpo", f"Visto no {nome} às {datetime.now():%H:%M}", None, f"limpo-{int(time.time())}")
+                except Exception as e:
+                    print(f"  aviso: {e}", flush=True)
             return
         pet = None
         for pid, ref in self.ultimo.items():  # quem estava por ali nos últimos 15 minutos
