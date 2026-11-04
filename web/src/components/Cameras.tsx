@@ -148,10 +148,10 @@ export default function Cameras({ admin }: { admin: boolean }) {
                           <Pencil size={13} />
                         </button>
                       )}
+                      {c.ip_atual && <span className="shrink-0 text-[12px] font-normal text-slate-500">{c.ip_atual}</span>}
                     </h2>
                   )}
-                  <p className="truncate text-[12px] text-slate-500">
-                    {c.ip_atual ? `${c.ip_atual} · ` : ''}
+                  <p className="text-[12px] text-slate-500">
                     {c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : 'Sem foto ainda'}
                   </p>
                   {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
