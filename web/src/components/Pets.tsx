@@ -10,10 +10,9 @@ type Achada = { id: number; pet_id: string; visto_em: string; snapshot_path: str
 type Dados = { pets: Pet[]; fotos: PetFoto[]; urls: Record<string, string>; achadas: Achada[]; achadasUrls: Record<string, string>; cams: Record<string, string> }
 
 async function carregar(): Promise<Dados> {
-  const [p, f, a, c] = await Promise.all([
+  const [p, f, c] = await Promise.all([
     supabase.from('pm_pets').select('*').order('nome'),
     supabase.from('pm_pet_fotos').select('*').order('created_at'),
-    supabase.from('pm_avistamentos').select('id,pet_id,visto_em,snapshot_path,camera_id').not('pet_id', 'is', null).not('snapshot_path', 'is', null).order('visto_em', { ascending: false }).limit(400),
     supabase.from('pm_cameras').select('id,nome'),
   ])
   if (p.error) throw new Error(p.error.message)
@@ -21,13 +20,13 @@ async function carregar(): Promise<Dados> {
   const urls: Record<string, string> = {}
   const todos = [...fotos.map((x) => x.path), ...((p.data ?? []) as Pet[]).map((x) => x.foto_perfil_path ?? '')]
   Object.assign(urls, await urlsDosPets(todos))
-  const achadas = ((a.data ?? []) as Achada[]).filter((x, i, l) => l.findIndex((y) => y.pet_id === x.pet_id && y.snapshot_path === x.snapshot_path) === i)
-  const porPet = new Map<string, number>()
-  const poucas = achadas.filter((x) => {
-    const n = (porPet.get(x.pet_id) ?? 0) + 1
-    porPet.set(x.pet_id, n)
-    return n <= 24
-  })
+  // uma consulta por pet: um pet muito visto (ex.: Mavi) não pode esconder os avistamentos dos outros
+  const porPet = await Promise.all(
+    ((p.data ?? []) as Pet[]).map((pet) =>
+      supabase.from('pm_avistamentos').select('id,pet_id,visto_em,snapshot_path,camera_id').eq('pet_id', pet.id).not('snapshot_path', 'is', null).order('visto_em', { ascending: false }).limit(80),
+    ),
+  )
+  const poucas = porPet.flatMap((r) => ((r.data ?? []) as Achada[]).filter((x, i, l) => l.findIndex((y) => y.snapshot_path === x.snapshot_path) === i).slice(0, 24))
   return { pets: (p.data ?? []) as Pet[], fotos, urls, achadas: poucas, achadasUrls: await urlsDasFotos(poucas.map((x) => x.snapshot_path)), cams: Object.fromEntries(((c.data ?? []) as { id: string; nome: string }[]).map((x) => [x.id, x.nome])) }
 }
 

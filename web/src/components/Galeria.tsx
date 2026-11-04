@@ -34,7 +34,7 @@ export function Galeria({
       {janela}
       <button type="button" onClick={() => setAberta((a) => !a)} className="flex w-full items-center justify-between rounded-xl bg-white/50 px-3 py-2 text-left text-[12px] font-semibold text-slate-700">
         <span>
-          Fotos · {enviadas.length} enviada(s) · {encontradas.length} encontrada(s)
+          Fotos · {enviadas.length} enviada(s) · {encontradas.length >= 24 ? 'as 24 mais recentes encontradas' : `${encontradas.length} encontrada(s)`}
         </span>
         <ChevronDown size={16} className={`transition ${aberta ? 'rotate-180' : ''}`} />
       </button>
