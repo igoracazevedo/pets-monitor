@@ -18,12 +18,12 @@ class Deteccao:
 
 
 def filtrar_protecao(caixas: list[tuple[tuple[int, int, int, int], float]], shape) -> list[tuple[int, int, int, int]]:
-    """Fica a caixa com certeza >= 0.45, ou a duvidosa (>= 0.25) que ocupe até 12% da imagem."""
+    """Fica a caixa com certeza >= 0.45 (se ocupar mais de 25% da imagem, >= 0.65) ou a duvidosa (>= 0.25) que ocupe até 12%."""
     h, w = shape[:2]
     out = []
     for (x1, y1, x2, y2), conf in caixas:
         area = (x2 - x1) * (y2 - y1) / float(w * h)
-        if conf >= 0.45 or (conf >= 0.25 and area <= 0.12):
+        if (conf >= 0.45 and (area <= 0.25 or conf >= 0.65)) or (conf >= 0.25 and area <= 0.12):
             out.append((x1, y1, x2, y2))
     return out
 

@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from . import capture
+from .detect import _iou
 from .identify import Identificador, Palpite, caracteristica
 from .privacidade import desfocar_pessoas
 from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
@@ -87,12 +88,16 @@ class Varredura:
         self.ultimo_quadro: dict[str, float] = {}
         self.falhas: dict[str, tuple[int, float]] = {}  # câmera -> (falhas seguidas, só tenta de novo depois de)
 
-    def proteger(self, frame):
+    def proteger(self, frame, cid: str | None = None):
         """Imagem que pode sair do PC: corpo das pessoas desfocado, só o rosto nítido (desligue com proteger_pessoas: false)."""
         if not self.cfg.get("proteger_pessoas", True):
             return frame
         try:
             caixas = self.detector.pessoas_na_imagem(frame) if hasattr(self.detector, "pessoas_na_imagem") else []
+            h, w = frame.shape[:2]
+            # lugares que você marcou "Não é pessoa" (cama, cobertor, bicho de pelúcia) não são escondidos
+            ign = [(a * w, b * h, c * w, d * h) for a, b, c, d in self.ignorar.get(cid, [])] if cid else []
+            caixas = [c for c in caixas if not any(_iou(c, g) > 0.4 for g in ign)]
             if not caixas:
                 return frame
             if self.rostos is None:
@@ -270,7 +275,7 @@ class Varredura:
 
         def imagem_publica():
             if not publico:
-                publico.append(_anotar(self.proteger(frame), marcas))
+                publico.append(_anotar(self.proteger(frame, cid), marcas))
             return publico[0]
 
         quadro_path = None
@@ -341,7 +346,7 @@ class Varredura:
             self.ultima_agua[chave] = time.time()
             pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
             foto = f"avistamentos/{datetime.now():%Y/%m/%d}/agua-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
-            self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
+            self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
             self.db.evento_banheiro({"camera_id": cid, "tipo": "agua", "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
             print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} bebeu água", flush=True)
             if self.notificador and self.notificador.ativo:
@@ -373,7 +378,7 @@ class Varredura:
             if ref.get("camera") == cid and time.time() - ref["ts"] < 900:
                 pet = next((x for x in self.pets if x["id"] == pid), None)
         foto = f"avistamentos/{datetime.now():%Y/%m/%d}/banheiro-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
-        self.db.enviar_foto(foto, _jpeg(self.proteger(frame), self.cfg["largura_foto"]))
+        self.db.enviar_foto(foto, _jpeg(self.proteger(frame, cid), self.cfg["largura_foto"]))
         self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
         print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''}", flush=True)
         if self.notificador and self.notificador.ativo:  # sempre avisa: xixi/cocô novo no banheiro
@@ -391,7 +396,7 @@ class Varredura:
             return "câmera não encontrada"
         cfg_cam, reg = alvo
         frame = capture.capturar(cfg_cam)
-        caminho = self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame), lambda f: _jpeg(f, self.cfg["largura_foto"]))
+        caminho = self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame, camera_id), lambda f: _jpeg(f, self.cfg["largura_foto"]))
         self.db.evento_banheiro({"camera_id": camera_id, "tipo": rotulo, "snapshot_path": caminho, "visto_em": agora()})  # o estado atual do tapete aparece nos avisos
         self.estado_banheiro[camera_id] = rotulo  # o que já está lá não conta como evento novo
         c = self.banheiro.cache.get(camera_id) or {}
@@ -414,8 +419,19 @@ class Varredura:
         dets = [d for d in self.detector.detectar(frame) if d.especie != "pessoa"]
         fortes = [d for d in dets if not d.fraca]
         dets = fortes or dets
+        if not dets:  # segunda chance: aceita até palpite fraco (bicho deitado, escuro, atrás de cobertor)
+            antiga = self.detector.confianca
+            self.detector.confianca = 0.08
+            try:
+                dets = [d for d in self.detector.detectar(frame) if d.especie != "pessoa"]
+            finally:
+                self.detector.confianca = antiga
         if not dets:
-            return f"não achei nenhum animal na foto de agora da câmera {reg['nome']}"
+            foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{camera_id[:8]}-{datetime.now():%H%M%S}.jpg"
+            self.db.enviar_foto(foto, _jpeg(self.proteger(frame, camera_id), self.cfg["largura_foto"]))
+            self.db.avistamento({"camera_id": camera_id, "confianca": 0, "identificacao": "manual", "pet_id": None, "pessoa_id": None, "especie": pet.get("especie") or "cachorro", "snapshot_path": foto})
+            return (f"Não consegui enxergar {pet['nome']} sozinho em {reg['nome']}. Guardei a foto no Histórico: abra, toque em Marcar quem é, "
+                    f"desenhe um quadrado em volta dela e escolha {pet['nome']}. Assim eu aprendo e atualizo a posição.")
         area = lambda d: (d.caixa[2] - d.caixa[0]) * (d.caixa[3] - d.caixa[1])
         if len(dets) > 1 and pet.get("porte") == "grande":
             d = max(dets, key=area)
@@ -426,7 +442,7 @@ class Varredura:
         x1, y1, x2, y2 = d.caixa
         box = {"x": round(x1 / w, 4), "y": round(y1 / h, 4), "w": round((x2 - x1) / w, 4), "h": round((y2 - y1) / h, 4)}
         foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{camera_id[:8]}-{datetime.now():%H%M%S}.jpg"
-        self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame), [(d.caixa, pet["nome"])]), self.cfg["largura_foto"]))
+        self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, camera_id), [(d.caixa, pet["nome"])]), self.cfg["largura_foto"]))
         self.db.avistamento({"camera_id": camera_id, "confianca": 1, **box, "identificacao": "manual", "pet_id": pet_id, "pessoa_id": None, "especie": pet.get("especie") or d.especie, "snapshot_path": foto})
         agora_s = agora()
         self.db.ultima_posicao({"camera_id": camera_id, "confianca": 1, **box, "pet_id": pet_id, "visto_em": agora_s, "snapshot_path": foto, "foto_em": agora_s})
@@ -493,7 +509,7 @@ class Varredura:
                 return 0
             try:
                 caminho = f"ao-vivo/{reg['id']}.jpg"
-                self.db.enviar_foto(caminho, _jpeg(self.proteger(capture.capturar(c)), self.cfg["largura_foto"]))
+                self.db.enviar_foto(caminho, _jpeg(self.proteger(capture.capturar(c), reg["id"]), self.cfg["largura_foto"]))
                 self.db.status_camera(reg["id"], True, quadro_path=caminho)
                 return 1
             except Exception as e:

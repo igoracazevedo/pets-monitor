@@ -428,10 +428,11 @@ def test_protecao_filtro():
     from pets_agent.detect import filtrar_protecao
 
     cama = ((250, 330, 660, 640), 0.31)      # caixa enorme e duvidosa (cama): não esconde a foto toda
+    cama2 = ((250, 200, 870, 640), 0.55)     # enorme e só 55%: também não
     pessoa = ((100, 50, 300, 600), 0.80)      # pessoa de verdade: esconde
     parcial = ((10, 10, 90, 120), 0.30)       # pedaço pequeno e duvidoso: esconde
-    r = filtrar_protecao([cama, pessoa, parcial], (665, 876, 3))
-    assert pessoa[0] in r and parcial[0] in r and cama[0] not in r
+    r = filtrar_protecao([cama, cama2, pessoa, parcial], (665, 876, 3))
+    assert pessoa[0] in r and parcial[0] in r and cama[0] not in r and cama2[0] not in r
     print("proteção: cama não vira pessoa, gente de verdade continua escondida: ok")
 
 
