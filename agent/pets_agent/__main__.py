@@ -1,3 +1,4 @@
+import os
 import argparse
 import time
 from pathlib import Path
@@ -391,6 +392,8 @@ def cmd_sondar(args):
         for linha in _onvif(args.ip, args.onvif, args.usuario, args.senha):
             print(f"  {linha}")
         return
+    if args.detalhe:  # o ffmpeg passa a mostrar cada pedido e resposta RTSP (SETUP, Transport...)
+        os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "48"
     if args.caminho:  # um caminho só: diz o que a câmera responde, se o vídeo chega e se o programa consegue abrir a imagem
         for c in (args.caminho, args.caminho.replace("subtype=1", "subtype=0")) if "subtype=1" in args.caminho else (args.caminho,):
             r = _descrever(args.ip, args.porta, c, args.usuario, args.senha, timeout=6.0)
@@ -782,6 +785,7 @@ def main():
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
     so.add_argument("--onvif", type=int, default=0, help="porta ONVIF da câmera (ex.: 5000): pergunta a ela qual é o endereço RTSP")
+    so.add_argument("--detalhe", action="store_true", help="com --caminho: mostra o diálogo RTSP completo do ffmpeg")
     so.add_argument("--caminho", default="", help="testa só este caminho RTSP (ex.: /cam/realmonitor?channel=10&subtype=1)")
     so.set_defaults(fn=cmd_sondar)
     ec = sub.add_parser("ensinar-camera", help="ensina um pet pela câmera onde ele está agora")
