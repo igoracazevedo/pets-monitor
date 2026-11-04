@@ -401,6 +401,17 @@ def cmd_sondar(args):
                     break
         except Exception:
             pass
+    if args.canais:  # tira uma foto de cada canal do NVR e salva canal-N.jpg, para ver qual canal é qual câmera
+        cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
+        for n in range(1, args.canais + 1):
+            url = f"rtsp://{cred}{args.ip}:{args.porta}/cam/realmonitor?channel={n}&subtype=1"
+            try:
+                quadro = capture._rtsp(url, descartar=2)
+                cv2.imwrite(f"canal-{n}.jpg", quadro)
+                print(f"  canal {n}: ok, {quadro.shape[1]}x{quadro.shape[0]} (salvo canal-{n}.jpg)")
+            except Exception as e:
+                print(f"  canal {n}: {str(e)[:60]}")
+        return
     if args.onvif:  # pergunta o endereço RTSP à própria câmera
         print(f"ONVIF em {args.ip}:{args.onvif}:")
         for linha in _onvif(args.ip, args.onvif, args.usuario, args.senha):
@@ -798,6 +809,7 @@ def main():
     so.add_argument("usuario", nargs="?", default="")
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
+    so.add_argument("--canais", type=int, default=0, help="NVR: salva uma foto de cada canal de 1 até N (canal-N.jpg)")
     so.add_argument("--onvif", type=int, default=0, help="porta ONVIF da câmera (ex.: 5000): pergunta a ela qual é o endereço RTSP")
     so.add_argument("--detalhe", action="store_true", help="com --caminho: mostra o diálogo RTSP completo do ffmpeg")
     so.add_argument("--caminho", default="", help="testa só este caminho RTSP (ex.: /cam/realmonitor?channel=10&subtype=1)")
