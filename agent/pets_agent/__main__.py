@@ -327,6 +327,21 @@ def cmd_sondar(args):
                     break
         except Exception:
             pass
+    if args.caminho:  # um caminho só: diz o que a câmera responde, se o vídeo chega e se o programa consegue abrir a imagem
+        for c in (args.caminho, args.caminho.replace("subtype=1", "subtype=0")) if "subtype=1" in args.caminho else (args.caminho,):
+            r = _descrever(args.ip, args.porta, c, args.usuario, args.senha, timeout=6.0)
+            print(f"  {c}: {r['status']}" + (f" (login {r['login']})" if r["login"] else ""))
+            for f in r["formatos"]:
+                print(f"      {f}")
+            if " 200" in r["status"]:
+                print(f"      => recebendo vídeo: {_tocar(args.ip, args.porta, c, args.usuario, args.senha, segundos=6.0)}")
+            cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
+            try:
+                quadro = capture._rtsp(f"rtsp://{cred}{args.ip}:{args.porta}{c}", descartar=2)
+                print(f"      => o programa abriu a imagem: {quadro.shape[1]}x{quadro.shape[0]}")
+            except Exception as e:
+                print(f"      => o programa NÃO abriu a imagem: {e}")
+        return
     print(f"Resposta da câmera em {args.ip}:{args.porta} (o que ela diz de cada caminho):")
     for c in CAMINHOS_RTSP:
         r = _descrever(args.ip, args.porta, c, args.usuario, args.senha, timeout=4.0)
@@ -702,6 +717,7 @@ def main():
     so.add_argument("usuario", nargs="?", default="")
     so.add_argument("senha", nargs="?", default="")
     so.add_argument("--porta", type=int, default=554)
+    so.add_argument("--caminho", default="", help="testa só este caminho RTSP (ex.: /cam/realmonitor?channel=10&subtype=1)")
     so.set_defaults(fn=cmd_sondar)
     ec = sub.add_parser("ensinar-camera", help="ensina um pet pela câmera onde ele está agora")
     ec.add_argument("pet", nargs="?", default="")
