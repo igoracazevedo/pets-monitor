@@ -1,24 +1,22 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera, type ObjetoCatalogo, type Pet, type Zona } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type ObjetoCatalogo, type Pet } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto } from '../lib/util'
 import { useVisualizador } from './Visualizador'
 
-type Dados = { objetos: ObjetoCatalogo[]; zonas: Zona[]; pets: Pet[]; cams: Record<string, string>; fotos: Record<string, string>; semTabela: boolean }
+type Dados = { objetos: ObjetoCatalogo[]; pets: Pet[]; cams: Record<string, string>; fotos: Record<string, string>; semTabela: boolean }
 const NOME: Record<string, string> = { bebedouro: 'Bebedouro', comedouro: 'Comedouro', banheiro: 'Banheiro', cama: 'Cama' }
 
 async function carregar(): Promise<Dados> {
-  const [o, z, p, c] = await Promise.all([
-    supabase.from('pm_objetos').select('zona_id,pet_id,tipo,camera_id,imagem_path,sumido,visto_em'),
-    supabase.from('pm_zonas').select('*'),
+  const [o, p, c] = await Promise.all([
+    supabase.from('pm_objetos').select('*').order('created_at'),
     supabase.from('pm_pets').select('*').order('nome'),
     supabase.from('pm_cameras').select('id,nome'),
   ])
   const objetos = (o.data ?? []) as ObjetoCatalogo[]
   return {
     objetos,
-    zonas: (z.data ?? []) as Zona[],
     pets: (p.data ?? []) as Pet[],
     cams: Object.fromEntries(((c.data ?? []) as Pick<Camera, 'id' | 'nome'>[]).map((x) => [x.id, x.nome])),
     fotos: await urlsDasFotos(objetos.map((x) => x.imagem_path)),
@@ -26,50 +24,51 @@ async function carregar(): Promise<Dados> {
   }
 }
 
-/** Catálogo: cada objeto marcado de cada pet, com a aparência aprendida e onde está agora (acompanha mudança de lugar e de câmera). */
+/** Catálogo: os objetos de cada pet (criados ao marcar um local numa foto). Ficam aqui, e o programa de casa os procura onde estiverem, até você apagar. */
 export default function Catalogo({ admin }: { admin: boolean }) {
-  const { dados, carregando, recarregar } = useDados<Dados>(carregar, { objetos: [], zonas: [], pets: [], cams: {}, fotos: {}, semTabela: false }, 30000)
+  const { dados, carregando, recarregar } = useDados<Dados>(carregar, { objetos: [], pets: [], cams: {}, fotos: {}, semTabela: false }, 30000)
   const { abrir, janela } = useVisualizador()
   const [erro, setErro] = useState('') // hooks sempre antes de qualquer return antecipado
-  if (carregando) return <p className="py-8 text-center text-slate-400">Carregando…</p>
-  if (dados.semTabela) return <p className="vidro p-4 text-sm text-slate-600">A tabela do catálogo ainda não existe: rode o trecho SQL do catálogo no Supabase.</p>
-  const grupos = [...dados.pets.map((p) => ({ id: p.id as string | null, nome: p.nome })), { id: null as string | null, nome: 'Sem dono' }]
-  const zonaDe = (id: string) => dados.zonas.find((z) => z.id === id)
-  const donoDe = (o: ObjetoCatalogo) => (zonaDe(o.zona_id) ? zonaDe(o.zona_id)!.pet_id : o.pet_id) // vale o que está no local marcado: é onde você troca o dono
 
   async function definirDono(o: ObjetoCatalogo, petId: string) {
     setErro('')
-    const { error } = await supabase.from('pm_zonas').update({ pet_id: petId || null }).eq('id', o.zona_id)
-    if (error) setErro(error.message)
-    else void recarregar()
+    const a = await supabase.from('pm_objetos').update({ pet_id: petId || null }).eq('id', o.id)
+    if (a.error) return setErro(a.error.message)
+    if (o.zona_id) await supabase.from('pm_zonas').update({ pet_id: petId || null }).eq('id', o.zona_id) // a marcação na foto muda de cor/nome junto
+    void recarregar()
   }
   async function apagar(o: ObjetoCatalogo) {
-    if (!window.confirm(`Apagar este ${NOME[o.tipo]?.toLowerCase() ?? 'objeto'} do catálogo? O local marcado nas fotos também some.`)) return
+    if (!window.confirm(`Apagar este ${NOME[o.tipo]?.toLowerCase() ?? 'objeto'} do catálogo? Ele deixa de ser procurado e a marcação nas fotos também some.`)) return
     setErro('')
-    const { error } = await supabase.from('pm_zonas').delete().eq('id', o.zona_id) // o objeto do catálogo sai junto
-    if (error) setErro(error.message)
-    else void recarregar()
+    const a = await supabase.from('pm_objetos').delete().eq('id', o.id)
+    if (a.error) return setErro(a.error.message)
+    if (o.zona_id) await supabase.from('pm_zonas').delete().eq('id', o.zona_id)
+    if (o.imagem_path) await supabase.storage.from('pm-snapshots').remove([o.imagem_path])
+    void recarregar()
   }
+
+  if (carregando) return <p className="py-8 text-center text-slate-400">Carregando…</p>
+  if (dados.semTabela) return <p className="vidro p-4 text-sm text-slate-600">A tabela do catálogo ainda não existe: rode o SQL do catálogo no Supabase.</p>
+  const grupos = [...dados.pets.map((p) => ({ id: p.id as string | null, nome: p.nome })), { id: null as string | null, nome: 'Sem dono' }]
   return (
     <div className="space-y-4">
       {dados.objetos.length === 0 && (
-        <p className="vidro p-5 text-center text-sm text-slate-500">Nenhum objeto ainda. Marque o bebedouro, comedouro, banheiro ou cama de cada pet nas fotos (Histórico ou Câmeras) e o programa de casa aprende a aparência de cada um em alguns minutos.</p>
+        <p className="vidro p-5 text-center text-sm text-slate-500">Nenhum objeto ainda. Marque o bebedouro, comedouro, banheiro ou cama de cada pet numa foto (Histórico ou Câmeras): o objeto entra aqui com o recorte da foto e fica até você apagar.</p>
       )}
       {grupos.map((g) => {
-        const lista = dados.objetos.filter((o) => donoDe(o) === g.id)
+        const lista = dados.objetos.filter((o) => o.pet_id === g.id)
         if (lista.length === 0) return null
         return (
           <section key={g.id ?? 'sem'} className="vidro space-y-3 p-4">
             <h2 className="font-bold text-slate-900">{g.nome}</h2>
             <ul className="space-y-3">
               {lista.map((o) => {
-                const origem = zonaDe(o.zona_id)?.camera_id
-                const mudou = !!o.camera_id && !!origem && o.camera_id !== origem
+                const mudou = !!o.camera_id && !!o.camera_origem && o.camera_id !== o.camera_origem
                 const foto = o.imagem_path ? dados.fotos[o.imagem_path] : undefined
                 return (
-                  <li key={o.zona_id} className="flex items-center gap-3">
+                  <li key={o.id} className="flex items-center gap-3">
                     {foto ? (
-                      <button onClick={() => abrir([{ id: o.zona_id, url: foto, titulo: `${NOME[o.tipo]} · ${g.nome}`, legenda: '' }])} className="shrink-0">
+                      <button onClick={() => abrir([{ id: o.id, url: foto, titulo: `${NOME[o.tipo]} · ${g.nome}`, legenda: '' }])} className="shrink-0">
                         <img src={foto} alt="" className="h-14 w-14 rounded-xl bg-slate-100 object-cover" />
                       </button>
                     ) : (
@@ -80,6 +79,7 @@ export default function Catalogo({ admin }: { admin: boolean }) {
                       <p className="text-[13px] text-slate-600">
                         {o.sumido ? 'Não estou vendo agora' : `Agora em ${o.camera_id ? dados.cams[o.camera_id] ?? 'câmera' : '—'}`}
                         {mudou && !o.sumido && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">mudou de câmera</span>}
+                        {!o.zona_id && <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">sem marcação na foto</span>}
                       </p>
                       {o.visto_em && <p className="text-[11px] text-slate-400">conferido {haQuanto(o.visto_em)}</p>}
                       {admin && g.id === null && (
@@ -104,7 +104,7 @@ export default function Catalogo({ admin }: { admin: boolean }) {
         )
       })}
       {erro && <p className="text-sm text-rose-600">{erro}</p>}
-      <p className="text-center text-[11px] text-slate-400">Se a miniatura estiver errada, apague o local na foto e marque de novo: ele aprende outra vez.</p>
+      <p className="text-center text-[11px] text-slate-400">Tirar a marcação da foto não apaga o objeto: ele continua aqui e continua sendo procurado. Para remover de vez, use a lixeira.</p>
       {janela}
     </div>
   )

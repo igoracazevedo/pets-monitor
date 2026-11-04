@@ -135,6 +135,7 @@ class Varredura:
         self.rev_vistos: dict[str, dict[str, float]] = {}
         self.rev_banheiro: dict[str, dict] = {}
         self.aviso_tapete: dict[str, float] = {}
+        self.ultimos_objetos = 0.0
 
     def _nome_pet(self, pid):
         return next((p["nome"] for p in self.pets if p["id"] == pid), None)
@@ -261,10 +262,18 @@ class Varredura:
             self.zonas = {}
             for z in self.db.zonas():
                 self.zonas.setdefault(z["camera_id"], []).append(z)
-            if getattr(self, "catalogo", None):
-                self.catalogo.sincronizar(self.zonas)
         except Exception:
             pass  # SQL ainda não rodado
+
+    def carregar_objetos(self):
+        """Catálogo: os objetos de cada pet guardados no banco (criados ao marcar um local no app)."""
+        if not self.catalogo or time.time() - self.ultimos_objetos < 120:
+            return
+        self.ultimos_objetos = time.time()
+        try:
+            self.catalogo.sincronizar(self.db.objetos())
+        except Exception:
+            pass  # SQL do catálogo ainda não rodado
 
     def atualizar_nomes(self):
         """Pega do banco o apelido e o liga/desliga de cada câmera (você muda no app)."""
@@ -614,6 +623,7 @@ class Varredura:
         if not self.buffer:
             return 0
         self._atualizar_eventos()
+        self.carregar_objetos()
         feitas, ini = 0, time.time()
         for cid, caminho, ts in self.buffer.pendentes(limite):
             if time.time() - ini > orcamento_s:
@@ -806,6 +816,7 @@ class Varredura:
             self.ultimo_quadro.clear()
         self.atualizar_nomes()
         self.carregar_zonas()
+        self.carregar_objetos()
         saida = []
         for c, r in self.cameras:
             try:

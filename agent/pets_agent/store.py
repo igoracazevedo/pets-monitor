@@ -120,8 +120,11 @@ class Supabase:
     def zonas(self) -> list[dict]:
         return self._rest("GET", "pm_zonas", {"select": "*"})
 
-    def objeto(self, linha: dict):
-        self._rest("POST", "pm_objetos", {"on_conflict": "zona_id"}, json=linha, extra={"Prefer": "resolution=merge-duplicates"})
+    def objetos(self) -> list[dict]:
+        return self._rest("GET", "pm_objetos", {"select": "*"})
+
+    def objeto(self, objeto_id: str, campos: dict):
+        self._rest("PATCH", "pm_objetos", {"id": f"eq.{objeto_id}"}, json=campos)
 
     def eventos_desde(self, iso: str) -> list[dict]:
         return self._rest("GET", "pm_banheiro_eventos", {"select": "tipo,pet_id,visto_em", "visto_em": f"gte.{iso}", "limit": "2000"})

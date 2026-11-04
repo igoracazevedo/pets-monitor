@@ -152,13 +152,13 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
               className="flex shrink-0 items-center gap-1.5 rounded-full bg-rose-600 px-3 py-1.5 text-[13px] font-semibold text-white"
               onClick={async () => {
                 const l = item.locais![destaque]
-                if (!window.confirm(`Apagar a marcação "${l.rotulo}" desta câmera?`)) return
+                if (!window.confirm(`Tirar a marcação "${l.rotulo}" das fotos desta câmera? O objeto continua no catálogo (Pets › Objetos).`)) return
                 await marcar.onApagarLocal!(l.id!)
                 setApagados((a) => new Set(a).add(l.id!))
                 setDestaque(null)
               }}
             >
-              Apagar este local
+              Tirar marcação da foto
             </button>
           )}
         </div>

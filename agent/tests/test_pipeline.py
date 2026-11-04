@@ -573,20 +573,21 @@ def test_catalogo_acompanha_o_objeto():
     from pets_agent.catalogo import Catalogo
 
     class DB:
-        def __init__(s): s.fotos, s.linhas = [], []
+        def __init__(s): s.fotos, s.campos, s.baixar = [], [], {}
         def enviar_foto(s, c, b): s.fotos.append(c)
-        def objeto(s, l): s.linhas.append(l)
+        def objeto(s, oid, campos): s.campos.append((oid, campos))
+        def baixar_snapshot(s, c): return s.baixar[c]
 
     with tempfile.TemporaryDirectory() as d:
         db = DB()
         cat = Catalogo(db, Path(d), lambda pid: "Mavi", lambda cid: {"A": "Banheiro", "B": "Sala"}.get(cid, cid))
-        z = {"A": [{"id": "z1", "tipo": "bebedouro", "pet_id": "p1", "x": 0.2, "y": 0.5, "w": 0.1, "h": 0.12}]}
-        cat.sincronizar(z)
+        linhas = [{"id": "z1", "tipo": "bebedouro", "pet_id": "p1", "camera_id": "A", "camera_origem": "A", "x": 0.2, "y": 0.5, "w": 0.1, "h": 0.12}]
+        cat.sincronizar(linhas)
         assert cat.caixas("A", "bebedouro") == [(0.2, 0.5, 0.1, 0.12)]            # antes de aprender vale o lugar marcado
         cat.aprender("A", _cenario(1, [(128, 180, 1.0)]), [(0.2, 0.5, 0.1, 0.12)])  # bicho em cima: não aprende
         assert cat.objetos["z1"].dia is None
         cat.aprender("A", _cenario(1, [(128, 180, 1.0)]), [])
-        assert cat.objetos["z1"].dia is not None and db.fotos == ["objetos/z1.jpg"] and db.linhas[-1]["pet_id"] == "p1"
+        assert cat.objetos["z1"].dia is not None and db.fotos == ["objetos/z1.jpg"] and db.campos[-1][0] == "z1" and db.campos[-1][1]["imagem_path"] == "objetos/z1.jpg"
         # mudou um pouco de lugar na mesma câmera: o catálogo acompanha
         cat.atualizar("A", _cenario(1, [(148, 190, 1.0)]), [], False, 1000)
         x, y, _, _ = cat.caixas("A", "bebedouro")[0]
@@ -596,21 +597,36 @@ def test_catalogo_acompanha_o_objeto():
         cat.atualizar("A", _cenario(1), [(antes[0], antes[1], antes[2], antes[3])], True, 1100)
         assert cat.caixas("A", "bebedouro")[0] == antes and not cat.objetos["z1"].sumido
         # foi para outra câmera (e maior): só muda depois de 3 conferências seguidas
-        for i, t in enumerate((2000, 2250, 2500)):
+        for t in (2000, 2250, 2500):
             cat.atualizar("B", _cenario(7, [(400, 100, 1.4)]), [], True, t)
         assert cat.caixas("B", "bebedouro") and not cat.caixas("A", "bebedouro")
         bx = cat.caixas("B", "bebedouro")[0]
         assert abs(bx[0] - 400 / 640) < 0.03 and abs(bx[1] - 100 / 360) < 0.04, bx
         # reiniciando o programa o recorte continua guardado em disco
         cat2 = Catalogo(db, Path(d))
-        cat2.sincronizar(z)
+        cat2.sincronizar(linhas)
         assert cat2.objetos["z1"].dia is not None
         # outra câmera sem a vasilha não rouba o objeto
-        cat3 = Catalogo(db, Path(d)); cat3.sincronizar(z)
+        cat3 = Catalogo(db, Path(d)); cat3.sincronizar(linhas)
         for t in (5000, 5250, 5500):
             cat3.atualizar("B", _cenario(7), [], True, t)
         assert cat3.caixas("A", "bebedouro") and not cat3.caixas("B", "bebedouro")
-    print("catálogo: acha o objeto onde ele estiver (outro lugar, outra câmera), sem trocar à toa: ok")
+        # objeto criado no app: o recorte vem da foto marcada (960 px de largura), guardado no banco
+        foto = cv2.resize(_cenario(1, [(128, 180, 1.0)]), (960, 540))
+        recorte = foto[int(0.5 * 540) : int(0.62 * 540), int(0.2 * 960) : int(0.3 * 960)]
+        db.baixar["objetos/n1.jpg"] = cv2.imencode(".jpg", recorte)[1].tobytes()
+        with tempfile.TemporaryDirectory() as d2:
+            cat4 = Catalogo(db, Path(d2))
+            cat4.sincronizar([{**linhas[0], "id": "n1", "imagem_path": "objetos/n1.jpg", "largura_ref": 960}])
+            assert cat4.objetos["n1"].dia is not None
+            cat4.atualizar("A", _cenario(1, [(148, 190, 1.0)]), [], False, 1000)
+            assert abs(cat4.caixas("A", "bebedouro")[0][0] - 148 / 640) < 0.03
+            # o desenho na foto foi apagado (a linha continua existindo): o objeto segue no catálogo; some só quando a linha some
+            cat4.sincronizar([{**linhas[0], "id": "n1", "imagem_path": "objetos/n1.jpg", "largura_ref": 960, "zona_id": None}])
+            assert "n1" in cat4.objetos
+            cat4.sincronizar([])
+            assert "n1" not in cat4.objetos
+    print("catálogo: acha o objeto onde ele estiver (outro lugar, outra câmera), sem trocar à toa, e persiste até apagar: ok")
 
 
 test_catalogo_acompanha_o_objeto()

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet, type Zona } from '../lib/supabase'
 import { useDados } from '../lib/dados'
+import { marcarLocal } from '../lib/objetos'
 import { useVisualizador, type Caixa, type ItemFoto } from './Visualizador'
 import { dataHora, haQuanto } from '../lib/util'
 import { corPadraoPet, corValida } from '../lib/cores'
@@ -112,8 +113,7 @@ export default function Historico({ admin }: { admin: boolean }) {
     const a = item.extra as Avistamento
     if (destino.startsWith('zona:')) {
       const [, tipo, quem] = destino.split(':')
-      const z = await supabase.from('pm_zonas').insert({ camera_id: a.camera_id, tipo, pet_id: quem === 'todos' ? null : quem, x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) })
-      if (z.error) throw z.error
+      await marcarLocal({ cameraId: a.camera_id, tipo, petId: quem === 'todos' ? null : quem, caixa, urlFoto: item.url })
       await recarregar()
       return
     }

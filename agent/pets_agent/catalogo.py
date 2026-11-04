@@ -96,7 +96,7 @@ def _iou(a, b) -> float:
 
 @dataclass
 class Objeto:
-    zona_id: str
+    id: str
     pet_id: str | None
     tipo: str
     camera_id: str                      # câmera onde foi marcado
@@ -111,6 +111,7 @@ class Objeto:
     cand: dict | None = None
     buscou: dict = field(default_factory=dict)
     gravado: float = 0.0
+    imagem: str | None = None           # recorte guardado no banco
 
 
 class Catalogo:
@@ -132,33 +133,46 @@ class Catalogo:
         img = cv2.imread(str(caminho)) if caminho.exists() else None
         return Modelo.de(img, noite) if img is not None else None
 
-    def sincronizar(self, zonas: dict[str, list[dict]]):
-        """Cada local marcado no app (qualquer câmera) vira um objeto do catálogo."""
+    def sincronizar(self, linhas: list[dict]):
+        """Os objetos vêm da tabela pm_objetos (criados ao marcar um local no app). Continuam existindo mesmo que o desenho na foto seja apagado:
+        só saem quando você apaga o objeto na lista de Objetos."""
         vistos = set()
-        for cid, lista in zonas.items():
-            for z in lista:
-                if z.get("tipo") not in TIPOS:
-                    continue
-                zid = z["id"]
-                vistos.add(zid)
-                box0 = (float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"]))
-                o = self.objetos.get(zid)
-                if o:
-                    o.pet_id = z.get("pet_id")  # trocar o dono não muda a aparência: não precisa aprender de novo
-                if o and (o.tipo != z["tipo"] or _iou(o.box0, box0) < 0.9):
-                    del self.objetos[zid]  # você redesenhou/trocou o local: aprende de novo
-                    o = None
-                    for f in (self.pasta / f"{zid}.jpg", self.pasta / f"{zid}-noite.jpg"):
-                        f.unlink(missing_ok=True)
-                if not o:
-                    o = Objeto(zid, z.get("pet_id"), z["tipo"], cid, box0, cam=cid, box=box0)
-                    o.dia = self._carregar_modelo(self.pasta / f"{zid}.jpg", False)
-                    o.noite = self._carregar_modelo(self.pasta / f"{zid}-noite.jpg", True)
-                    self.objetos[zid] = o
-        for zid in [k for k in self.objetos if k not in vistos]:
-            del self.objetos[zid]
-            for f in (self.pasta / f"{zid}.jpg", self.pasta / f"{zid}-noite.jpg"):
+        for r in linhas:
+            if r.get("tipo") not in TIPOS or r.get("x") is None:
+                continue
+            oid = r["id"]
+            vistos.add(oid)
+            o = self.objetos.get(oid)
+            if o:
+                o.pet_id, o.tipo = r.get("pet_id"), r["tipo"]
+                continue
+            box = (float(r["x"]), float(r["y"]), float(r["w"]), float(r["h"]))
+            home = r.get("camera_origem") or r.get("camera_id")
+            o = Objeto(oid, r.get("pet_id"), r["tipo"], home, box, cam=r.get("camera_id") or home, box=box)
+            o.sumido = bool(r.get("sumido"))
+            o.dia = self._modelo_do_banco(o, r)
+            o.noite = self._carregar_modelo(self.pasta / f"{oid}-noite.jpg", True)
+            self.objetos[oid] = o
+        for oid in [k for k in self.objetos if k not in vistos]:
+            del self.objetos[oid]
+            for f in (self.pasta / f"{oid}.jpg", self.pasta / f"{oid}-noite.jpg"):
                 f.unlink(missing_ok=True)
+
+    def _modelo_do_banco(self, o: Objeto, r: dict) -> Modelo | None:
+        """Recorte guardado no banco (tirado da foto no momento da marcação). Sem ele, o programa aprende pela câmera, mais tarde."""
+        local = self.pasta / f"{o.id}.jpg"
+        if not local.exists() and r.get("imagem_path"):
+            try:
+                img = cv2.imdecode(np.frombuffer(self.db.baixar_snapshot(r["imagem_path"]), np.uint8), cv2.IMREAD_COLOR)
+                ref = r.get("largura_ref")
+                if img is not None and ref and int(ref) > LARGURA:  # a foto do app é maior que as imagens de 640 px comparadas aqui
+                    k = LARGURA / int(ref)
+                    img = cv2.resize(img, (max(1, int(img.shape[1] * k)), max(1, int(img.shape[0] * k))), interpolation=cv2.INTER_AREA)
+                if img is not None:
+                    cv2.imwrite(str(local), img)
+            except Exception as e:
+                print(f"  catálogo: não consegui baixar o recorte de {self.rotulo(o)} ({e})", flush=True)
+        return self._carregar_modelo(local, False)
 
     def tem_tipo(self, tipo: str) -> bool:
         return any(o.tipo == tipo for o in self.objetos.values())
@@ -188,15 +202,16 @@ class Catalogo:
                 continue
             if noite:
                 o.noite = Modelo.de(recorte, True)
-                cv2.imwrite(str(self.pasta / f"{o.zona_id}-noite.jpg"), recorte)
+                cv2.imwrite(str(self.pasta / f"{o.id}-noite.jpg"), recorte)
                 continue
             o.dia = Modelo.de(recorte, False)
-            cv2.imwrite(str(self.pasta / f"{o.zona_id}.jpg"), recorte)
+            cv2.imwrite(str(self.pasta / f"{o.id}.jpg"), recorte)
             o.gravado = 0.0
             print(f"  [catálogo] aprendi o {self.rotulo(o)} ({self.nome_camera(cid)})", flush=True)
             try:
                 ok, buf = cv2.imencode(".jpg", recorte)
-                self.db.enviar_foto(f"objetos/{o.zona_id}.jpg", buf.tobytes())
+                self.db.enviar_foto(f"objetos/{o.id}.jpg", buf.tobytes())
+                o.imagem = f"objetos/{o.id}.jpg"
             except Exception:
                 pass
             self._gravar(o, time.time())
@@ -270,17 +285,19 @@ class Catalogo:
             self._gravar(o, agora)
 
     def _gravar(self, o: Objeto, agora: float):
-        """Mostra o catálogo no app (tabela pm_objetos); se a tabela ainda não existe, segue só localmente."""
+        """Guarda no banco onde o objeto está agora (o app mostra); se a tabela ainda não existe, segue só localmente."""
         if time.time() < self.banco_ok_em:
             return
         o.gravado = agora
         try:
             from .store import agora as iso
 
-            self.db.objeto({
-                "zona_id": o.zona_id, "pet_id": o.pet_id, "tipo": o.tipo, "camera_id": o.cam,
-                "x": round(o.box[0], 4), "y": round(o.box[1], 4), "w": round(o.box[2], 4), "h": round(o.box[3], 4),
-                "imagem_path": f"objetos/{o.zona_id}.jpg" if o.dia else None, "sumido": o.sumido, "visto_em": iso(),
-            })
+            campos = {
+                "camera_id": o.cam, "x": round(o.box[0], 4), "y": round(o.box[1], 4), "w": round(o.box[2], 4), "h": round(o.box[3], 4),
+                "sumido": o.sumido, "visto_em": iso(),
+            }
+            if o.imagem:
+                campos["imagem_path"] = o.imagem
+            self.db.objeto(o.id, campos)
         except Exception:
             self.banco_ok_em = time.time() + 600

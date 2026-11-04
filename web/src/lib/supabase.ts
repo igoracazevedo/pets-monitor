@@ -151,4 +151,4 @@ export async function marcarComoObjeto(camera_id: string, x: number, y: number, 
 
 export type EventoBanheiro = { id: string; camera_id: string; tipo: 'xixi' | 'coco' | 'limpo' | 'agua' | 'comeu'; pet_id: string | null; snapshot_path: string | null; visto_em: string }
 
-export type ObjetoCatalogo = { zona_id: string; pet_id: string | null; tipo: Zona['tipo']; camera_id: string | null; imagem_path: string | null; sumido: boolean; visto_em: string | null }
+export type ObjetoCatalogo = { id: string; zona_id: string | null; pet_id: string | null; tipo: Zona['tipo']; camera_origem: string | null; camera_id: string | null; imagem_path: string | null; sumido: boolean; visto_em: string | null }

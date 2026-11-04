@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera, type Pet, type Zona } from '../lib/supabase'
+import { marcarLocal } from '../lib/objetos'
 import { locaisDaCamera, opcoesDeLocais } from '../lib/zonas'
 import { useDados } from '../lib/dados'
 import { haQuanto, minutosDesde } from '../lib/util'
@@ -55,9 +56,8 @@ export default function Cameras({ admin }: { admin: boolean }) {
     const cam = item.extra as Camera
     if (destino.startsWith('zona:')) { // marca um local (banheiro, bebedouro, comedouro, cama) nesta câmera
       const [, t, quem] = destino.split(':')
-      const z = await supabase.from('pm_zonas').insert({ camera_id: cam.id, tipo: t, pet_id: quem === 'todos' ? null : quem, x: Number(caixa.x.toFixed(4)), y: Number(caixa.y.toFixed(4)), w: Number(caixa.w.toFixed(4)), h: Number(caixa.h.toFixed(4)) })
-      if (z.error) throw z.error
-      setMsg('Local marcado. Ele aparece nas fotos dessa câmera, aqui e no Histórico.')
+      await marcarLocal({ cameraId: cam.id, tipo: t, petId: quem === 'todos' ? null : quem, caixa, urlFoto: item.url })
+      setMsg('Local marcado e guardado no catálogo de objetos (Pets › Objetos).')
       await recarregar()
       return
     }

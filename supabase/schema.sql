@@ -315,21 +315,38 @@ create policy pm_zonas_ler on public.pm_zonas for select to authenticated using 
 drop policy if exists pm_zonas_admin on public.pm_zonas;
 create policy pm_zonas_admin on public.pm_zonas for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
--- Catálogo de objetos de cada pet: aparência aprendida de cada local marcado e onde ele está agora (o programa de casa atualiza)
+-- Catálogo de objetos de cada pet: criado ao marcar um local numa foto, com o recorte guardado. Continua mesmo que a marcação na foto seja apagada;
+-- só sai quando o objeto é apagado na lista de Objetos. O programa de casa o procura pela aparência e atualiza onde está agora.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'pm_objetos' and column_name = 'zona_id')
+     and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'pm_objetos' and column_name = 'id') then
+    drop table public.pm_objetos;  -- versão antiga (só um cache de posição), recriada abaixo
+  end if;
+end $$;
 create table if not exists public.pm_objetos (
-  zona_id uuid primary key references public.pm_zonas(id) on delete cascade,
-  pet_id uuid references public.pm_pets(id) on delete cascade,
-  tipo text not null,
+  id uuid primary key default gen_random_uuid(),
+  zona_id uuid references public.pm_zonas(id) on delete set null,
+  pet_id uuid references public.pm_pets(id) on delete set null,
+  tipo text not null check (tipo in ('banheiro', 'bebedouro', 'comedouro', 'cama')),
+  camera_origem uuid references public.pm_cameras(id) on delete set null,
   camera_id uuid references public.pm_cameras(id) on delete set null,
   x numeric(5, 4), y numeric(5, 4), w numeric(5, 4), h numeric(5, 4),
   imagem_path text,
+  largura_ref int,
   sumido boolean not null default false,
   visto_em timestamptz,
   created_at timestamptz not null default now()
 );
+-- os locais que você já marcou viram objetos do catálogo (o programa de casa aprende a aparência pela câmera)
+insert into public.pm_objetos (zona_id, pet_id, tipo, camera_origem, camera_id, x, y, w, h)
+select z.id, z.pet_id, z.tipo, z.camera_id, z.camera_id, z.x, z.y, z.w, z.h from public.pm_zonas z
+where not exists (select 1 from public.pm_objetos o where o.zona_id = z.id);
 alter table public.pm_objetos enable row level security;
 drop policy if exists pm_objetos_ler on public.pm_objetos;
 create policy pm_objetos_ler on public.pm_objetos for select to authenticated using (public.pm_is_membro());
+drop policy if exists pm_objetos_admin on public.pm_objetos;
+create policy pm_objetos_admin on public.pm_objetos for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
 -- Log do programa de casa (a janela do iniciar.bat) visível no app, só para admin
 create table if not exists public.pm_logs (
