@@ -738,3 +738,41 @@ def test_contorno_livre():
 
 
 test_contorno_livre()
+
+
+def test_descrever_rtsp():
+    import hashlib, re, socket, threading
+    from pets_agent.__main__ import _descrever
+
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(5)
+    porta = srv.getsockname()[1]
+    md5 = lambda t: hashlib.md5(t.encode()).hexdigest()
+
+    def servir():
+        for _ in range(5):
+            c, _a = srv.accept()
+            req = c.recv(4096).decode()
+            url = re.search(r"DESCRIBE (\S+)", req).group(1)
+            if "/stream2" in url:
+                c.sendall(b"RTSP/1.0 404 Stream Not Found\r\nCSeq: 1\r\n\r\n")
+            elif "Authorization" not in req:
+                c.sendall(b'RTSP/1.0 401 Unauthorized\r\nCSeq: 1\r\nWWW-Authenticate: Digest realm="cam", nonce="abc123"\r\n\r\n')
+            else:
+                esperado = md5(f"{md5('igor:cam:segredo')}:abc123:{md5('DESCRIBE:' + url)}")
+                if esperado in req:
+                    corpo = "v=0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H265/90000\r\n"
+                    c.sendall(f"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: {len(corpo)}\r\n\r\n{corpo}".encode())
+                else:
+                    c.sendall(b"RTSP/1.0 401 Unauthorized\r\nCSeq: 2\r\n\r\n")
+            c.close()
+
+    threading.Thread(target=servir, daemon=True).start()
+    r = _descrever("127.0.0.1", porta, "/stream1", "igor", "segredo")
+    assert "200" in r["status"] and r["login"] == "Digest" and any("H265" in f for f in r["formatos"]), r
+    assert "401" in _descrever("127.0.0.1", porta, "/stream1", "igor", "errada")["status"]
+    assert "404" in _descrever("127.0.0.1", porta, "/stream2")["status"]
+    assert "sem resposta" in _descrever("127.0.0.1", 9, "/stream1", timeout=1)["status"]
+    print("sondar mostra o que a câmera responde (login, 404, formato do vídeo): ok")
+
+
+test_descrever_rtsp()

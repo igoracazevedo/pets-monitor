@@ -138,6 +138,61 @@ CAMINHOS_RTSP = [
 ]
 
 
+def _descrever(ip: str, porta: int, caminho: str, usuario: str = "", senha: str = "", timeout: float = 6.0) -> dict:
+    """Pede o DESCRIBE do RTSP "na unha" e devolve o que a câmera respondeu: código (200, 401, 404...), tipo de login e os formatos de vídeo."""
+    import base64
+    import hashlib
+    import re
+    import socket
+
+    md5 = lambda t: hashlib.md5(t.encode()).hexdigest()
+    url = f"rtsp://{ip}:{porta}{caminho}"
+
+    def pedir(autorizacao: str | None, cseq: int) -> tuple[str, dict, str]:
+        req = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: {cseq}\r\nAccept: application/sdp\r\nUser-Agent: pets-monitor\r\n" + (f"Authorization: {autorizacao}\r\n" if autorizacao else "") + "\r\n"
+        with socket.create_connection((ip, porta), timeout=timeout) as sk:
+            sk.settimeout(timeout)
+            sk.sendall(req.encode())
+            bruto = b""
+            while b"\r\n\r\n" not in bruto:
+                parte = sk.recv(4096)
+                if not parte:
+                    break
+                bruto += parte
+            cab, _, corpo = bruto.partition(b"\r\n\r\n")
+            linhas = cab.decode("latin-1").split("\r\n")
+            heads = {l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip() for l in linhas[1:] if ":" in l}
+            falta = int(heads.get("content-length", "0") or 0) - len(corpo)
+            while falta > 0:
+                parte = sk.recv(4096)
+                if not parte:
+                    break
+                corpo += parte
+                falta -= len(parte)
+            return linhas[0], heads, corpo.decode("latin-1")
+
+    try:
+        status, heads, corpo = pedir(None, 1)
+        login = ""
+        if " 401" in status and usuario:
+            desafio = heads.get("www-authenticate", "")
+            login = desafio.split(" ", 1)[0] or "?"
+            if desafio.lower().startswith("digest"):
+                campo = lambda k: (re.search(rf'{k}="([^"]*)"', desafio) or [None, ""])[1]
+                realm, nonce = campo("realm"), campo("nonce")
+                resp = md5(f"{md5(f'{usuario}:{realm}:{senha}')}:{nonce}:{md5(f'DESCRIBE:{url}')}")
+                auth = f'Digest username="{usuario}", realm="{realm}", nonce="{nonce}", uri="{url}", response="{resp}"'
+            else:
+                auth = "Basic " + base64.b64encode(f"{usuario}:{senha}".encode()).decode()
+            status, heads, corpo = pedir(auth, 2)
+        elif " 401" in status:
+            login = heads.get("www-authenticate", "").split(" ", 1)[0] or "?"
+        formatos = [l.strip() for l in corpo.splitlines() if l.startswith(("m=", "a=rtpmap"))]
+        return {"status": status, "login": login, "formatos": formatos}
+    except Exception as e:
+        return {"status": f"sem resposta ({type(e).__name__}: {str(e)[:80]})", "login": "", "formatos": []}
+
+
 def cmd_sondar(args):
     """Câmera genérica: testa os caminhos RTSP mais comuns e diz qual devolve imagem."""
     from urllib.parse import quote
@@ -146,6 +201,24 @@ def cmd_sondar(args):
         args.ip = input("IP da câmera (ex.: 192.168.18.10): ").strip()
         args.usuario = input("Usuário da câmera (Enter se não tem): ").strip()
         args.senha = input("Senha da câmera (Enter se não tem): ").strip()
+    if not args.usuario:  # sem login digitado: usa o do camera.properties da câmera que tem este IP
+        try:
+            from .camera_props import _ler
+
+            for c in _ler(config.RAIZ / "camera.properties").values():
+                if args.ip in c.get("rtsp", "") or c.get("host") == args.ip:
+                    args.usuario, args.senha = c.get("usuario", ""), c.get("senha", "")
+                    print("Usando o usuário e a senha desta câmera no camera.properties.")
+                    break
+        except Exception:
+            pass
+    print(f"Resposta da câmera em {args.ip}:{args.porta} (o que ela diz de cada caminho):")
+    for c in ("/stream1", "/stream2"):
+        r = _descrever(args.ip, args.porta, c, args.usuario, args.senha)
+        print(f"  {c}: {r['status']}" + (f" (login {r['login']})" if r["login"] else ""))
+        for f in r["formatos"]:
+            print(f"      {f}")
+    print()
     cred = f"{quote(args.usuario, safe='')}:{quote(args.senha, safe='')}@" if args.usuario else ""
     print(f"Testando {len(CAMINHOS_RTSP)} caminhos em {args.ip}:{args.porta} (uns 5 s cada se não existir)...")
     achou = False
