@@ -30,6 +30,15 @@ def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, floa
     return inter / uni if uni > 0 else 0.0
 
 
+# Onde fica o bebedouro/vasilha em cada câmera (x, y, largura, altura de 0 a 1), procurado pelo trecho do nome da câmera.
+# Mais específico primeiro. Pode ser trocado no config.yaml em `zonas_agua`.
+ZONAS_AGUA = {
+    "banheiro": [0.12, 0.34, 0.09, 0.12],        # vasilha rosa à esquerda
+    "quarto varanda": [0.37, 0.43, 0.13, 0.12],  # bebedouro lilás + vasilha branca ao lado do cercadinho
+    "quarto": [0.38, 0.84, 0.14, 0.16],          # visto de cima, na borda de baixo
+}
+
+
 def _sem_acento(t: str) -> str:
     return unicodedata.normalize("NFD", t).encode("ascii", "ignore").decode().lower()
 
@@ -75,6 +84,7 @@ class Varredura:
         self.banheiro = Banheiro(db)
         self.estado_banheiro: dict[str, str] = {}
         self.ultima_agua: dict[str, float] = {}
+        self.caixa_agua: dict[str, tuple[float, tuple[int, int, int, int]]] = {}
         from .notificar import Notificador
 
         self.notificador = Notificador(db) if hasattr(db, "assinaturas_push") else None
@@ -263,10 +273,11 @@ class Varredura:
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 
-        if "banheiro" in _sem_acento(nome):
+        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome):
             try:
                 self.vigiar_agua(cid, nome, frame, achados)
-                self.vigiar_banheiro(cid, nome, frame, dets)
+                if "banheiro" in _sem_acento(nome):
+                    self.vigiar_banheiro(cid, nome, frame, dets)
             except Exception as e:
                 print(f"  banheiro {nome}: {e}", flush=True)
 
@@ -331,7 +342,11 @@ class Varredura:
 
     def vigiar_agua(self, cid: str, nome: str, frame, achados):
         """Bicho com o corpo em cima da zona da vasilha de água (config `zona_agua`: x, y, largura, altura de 0 a 1) = bebeu água."""
-        zx, zy, zw, zh = self.cfg.get("zona_agua", [0.12, 0.34, 0.09, 0.12])  # a vasilha rosa, à esquerda da câmera do banheiro
+        zonas = {**ZONAS_AGUA, **{k.lower(): v for k, v in (self.cfg.get("zonas_agua") or {}).items()}}
+        chave_zona = next((k for k in sorted(zonas, key=len, reverse=True) if k in _sem_acento(nome)), None)
+        if not chave_zona:
+            return
+        zx, zy, zw, zh = zonas[chave_zona]
         h, w = frame.shape[:2]
         for d, p in achados:
             if d.especie == "pessoa":
@@ -343,7 +358,11 @@ class Varredura:
             chave = p.pet_id or f"?{cid}"
             if time.time() - self.ultima_agua.get(chave, 0) < 600:  # uma vez a cada 10 min por bicho
                 continue
+            antes = self.caixa_agua.get(chave)
+            if antes and time.time() - antes[0] < 3600 and _iou(d.caixa, antes[1]) > 0.7:  # parado no mesmo lugar (dormindo ao lado): não é beber
+                continue
             self.ultima_agua[chave] = time.time()
+            self.caixa_agua[chave] = (time.time(), d.caixa)
             pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
             foto = f"avistamentos/{datetime.now():%Y/%m/%d}/agua-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
             self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))

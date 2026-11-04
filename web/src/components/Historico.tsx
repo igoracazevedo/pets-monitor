@@ -48,6 +48,20 @@ export default function Historico({ admin }: { admin: boolean }) {
     await recarregar()
   }
 
+  /** Registra um evento (bebeu água, xixi, cocô) a partir de um registro do Histórico: usa o pet, a câmera, a foto e a hora dele. */
+  async function registrarEvento(a: Avistamento, tipo: string) {
+    if (!tipo) return
+    if (!a.pet_id) {
+      alert('Primeiro diga quem é (Quem é?), depois registre o evento.')
+      return
+    }
+    const nome = dados.pets.find((p) => p.id === a.pet_id)?.nome ?? 'O pet'
+    const texto = tipo === 'agua' ? 'bebeu água' : tipo === 'xixi' ? 'fez xixi' : 'fez cocô'
+    if (!confirm(`Registrar que ${nome} ${texto} em ${nomeCam(a.camera_id)} às ${dataHora(a.visto_em)}?`)) return
+    const { error } = await supabase.from('pm_banheiro_eventos').insert({ camera_id: a.camera_id, tipo, pet_id: a.pet_id, snapshot_path: a.snapshot_path, visto_em: a.visto_em })
+    alert(error ? `Não consegui registrar: ${error.message}` : 'Evento registrado. Veja no menu Eventos.')
+  }
+
   /** Remove o registro do histórico (e o arquivo da foto, se mais nada usa ela). */
   async function remover(a: Avistamento) {
     if (!confirm('Remover esta foto do histórico?')) return
@@ -195,6 +209,14 @@ export default function Historico({ admin }: { admin: boolean }) {
                       Remover
                     </button>
                   </div>
+                )}
+                {admin && (
+                  <select aria-label="Registrar evento" className="w-full !px-2 !py-1.5 text-[13px]" value="" onChange={(e) => void registrarEvento(a, e.target.value)}>
+                    <option value="">Registrar evento…</option>
+                    <option value="agua">Bebeu água</option>
+                    <option value="xixi">Fez xixi</option>
+                    <option value="coco">Fez cocô</option>
+                  </select>
                 )}
               </div>
             </li>

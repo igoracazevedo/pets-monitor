@@ -412,6 +412,7 @@ def test_agua():
     v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}
     v.pets = [{"id": "p1", "nome": "Bebela"}]
     f = np.zeros((480, 640, 3), np.uint8)
+    v.caixa_agua = {}
     v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (300, 300, 500, 400)), Pal())])
     assert not v.db.l  # longe da vasilha
     v.vigiar_agua("c1234567", "Banheiro", f, [(Deteccao("dog", 0.8, (90, 150, 155, 210)), Pal())])  # Mavi na vasilha rosa (foto real das 21:23)
@@ -437,3 +438,31 @@ def test_protecao_filtro():
 
 
 test_protecao_filtro()
+
+
+def test_agua_quarto():
+    import numpy as np
+    from pets_agent.detect import Deteccao
+    from pets_agent.varredura import Varredura
+
+    class Pal:
+        pet_id = "p2"
+
+    class DB:
+        l = []
+        def enviar_foto(s, c, b): pass
+        def evento_banheiro(s, r): s.l.append(r)
+    v = Varredura.__new__(Varredura)
+    v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None; v.ultima_agua = {}; v.caixa_agua = {}
+    v.pets = [{"id": "p2", "nome": "Bebela"}]
+    f = np.zeros((480, 640, 3), np.uint8)
+    # Quarto Varanda: Bebela no bebedouro lilás (x ~0.40, y ~0.49 da imagem)
+    v.vigiar_agua("c1234567", "Quarto Varanda", f, [(Deteccao("dog", 0.8, (200, 200, 300, 270)), Pal())])
+    assert len(v.db.l) == 1
+    v.ultima_agua = {}  # passou o intervalo, mas ela continua exatamente parada no mesmo lugar
+    v.vigiar_agua("c1234567", "Quarto Varanda", f, [(Deteccao("dog", 0.8, (200, 200, 300, 270)), Pal())])
+    assert len(v.db.l) == 1
+    print("água no quarto: Bebela no bebedouro lilás, e parada dormindo não conta: ok")
+
+
+test_agua_quarto()
