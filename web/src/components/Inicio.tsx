@@ -185,9 +185,45 @@ export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: s
       setComandando(false)
     }
   }
+  /** "Mavi bebeu água no Banheiro às 21:23": registra o evento à mão (usa a foto do Histórico dessa hora, se houver). */
+  async function registrarAgua(t: string) {
+    const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))
+    const bs = dados.cams.filter((c) => sem(c.nome).includes('banheiro'))
+    const cam = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome))) ?? (bs.length === 1 ? bs[0] : undefined)
+    if (!pet || !cam) {
+      setResposta(`Não entendi. Escreva, por exemplo: "${dados.pets[0]?.nome ?? 'Mavi'} bebeu água no ${bs[0]?.nome ?? 'Banheiro'} às 21:23".`)
+      return
+    }
+    const quando = new Date()
+    const h = t.match(/(\d{1,2})\s*[:h]\s*(\d{2})/)
+    if (h) {
+      quando.setHours(Number(h[1]), Number(h[2]), 0, 0)
+      if (quando.getTime() > Date.now() + 60_000) quando.setDate(quando.getDate() - 1)
+    }
+    setComandando(true)
+    try {
+      const ini = new Date(quando.getTime() - 10 * 60_000).toISOString()
+      const fim = new Date(quando.getTime() + 10 * 60_000).toISOString()
+      const { data: av } = await supabase.from('pm_avistamentos').select('snapshot_path,visto_em,pet_id').eq('camera_id', cam.id).gte('visto_em', ini).lte('visto_em', fim).not('snapshot_path', 'is', null)
+      const perto = ((av ?? []) as { snapshot_path: string; visto_em: string; pet_id: string | null }[]).sort((a, b) => Number(b.pet_id === pet.id) - Number(a.pet_id === pet.id) || Math.abs(Date.parse(a.visto_em) - quando.getTime()) - Math.abs(Date.parse(b.visto_em) - quando.getTime()))[0]
+      const { error } = await supabase.from('pm_banheiro_eventos').insert({ camera_id: cam.id, tipo: 'agua', pet_id: pet.id, snapshot_path: perto?.snapshot_path ?? null, visto_em: quando.toISOString() })
+      if (error) throw error
+      setResposta(`Registrado: ${pet.nome} bebeu água em ${cam.nome} às ${dataHora(quando.toISOString())}${perto ? ' (com a foto do Histórico dessa hora)' : ' (sem foto: não havia registro nessa hora)'}.`)
+      setTexto('')
+      await recarregar()
+    } catch (e) {
+      setResposta(e instanceof Error ? e.message : (e as { message?: string })?.message ?? 'Não consegui registrar. Rode o SQL do evento "agua" no Supabase.')
+    } finally {
+      setComandando(false)
+    }
+  }
   /** Linha de comando: "Mavi na Sala" -> o programa de casa tira a foto de agora da câmera, marca o pet e aprende com ela. */
   async function comando() {
     const t = sem(texto)
+    if (/beb(eu|endo|er)\s+agua/.test(t)) {
+      await registrarAgua(t)
+      return
+    }
     const rotulo = (['xixi', 'coco', 'limpo'] as const).find((r) => new RegExp(`\\b${r}\\b`).test(t))
     if (rotulo) {
       const bs = dados.cams.filter((c) => sem(c.nome).includes('banheiro'))
