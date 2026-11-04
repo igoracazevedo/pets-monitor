@@ -120,6 +120,12 @@ class Supabase:
     def zonas(self) -> list[dict]:
         return self._rest("GET", "pm_zonas", {"select": "*"})
 
+    def objeto(self, linha: dict):
+        self._rest("POST", "pm_objetos", {"on_conflict": "zona_id"}, json=linha, extra={"Prefer": "resolution=merge-duplicates"})
+
+    def eventos_desde(self, iso: str) -> list[dict]:
+        return self._rest("GET", "pm_banheiro_eventos", {"select": "tipo,pet_id,visto_em", "visto_em": f"gte.{iso}", "limit": "2000"})
+
     def ignorar(self) -> list[dict]:
         return self._rest("GET", "pm_ignorar", {"select": "*"})
 

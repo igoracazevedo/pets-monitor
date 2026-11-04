@@ -57,6 +57,12 @@ def carregar(caminho: str | None = None) -> dict:
     cfg["deteccao"].setdefault("modelo", "yolov8s.pt")
     cfg["deteccao"].setdefault("confianca_minima", 0.25)
     cfg["deteccao"].setdefault("tamanho", 960)
+    cfg.setdefault("buffer", {})  # imagens guardadas só neste PC para a segunda leitura em segundo plano
+    cfg["buffer"].setdefault("ativo", True)
+    cfg["buffer"].setdefault("horas", 12)
+    cfg["buffer"].setdefault("intervalo_s", 30)  # câmeras de banheiro/bebedouro/comedouro: uma imagem a cada 30 s
+    cfg["buffer"].setdefault("max_mb", 2000)
+    cfg.setdefault("catalogo", {"ativo": True})  # procura os objetos marcados (bebedouro, comedouro...) mesmo que mudem de lugar ou de câmera
     cfg.setdefault("identificacao", {})
     cfg["identificacao"].setdefault("pontuacao_minima", 0.55)
     cfg["identificacao"].setdefault("margem_minima", 0.05)

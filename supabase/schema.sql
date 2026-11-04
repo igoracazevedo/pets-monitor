@@ -313,6 +313,22 @@ create policy pm_zonas_ler on public.pm_zonas for select to authenticated using 
 drop policy if exists pm_zonas_admin on public.pm_zonas;
 create policy pm_zonas_admin on public.pm_zonas for all to authenticated using (public.pm_is_admin()) with check (public.pm_is_admin());
 
+-- Catálogo de objetos de cada pet: aparência aprendida de cada local marcado e onde ele está agora (o programa de casa atualiza)
+create table if not exists public.pm_objetos (
+  zona_id uuid primary key references public.pm_zonas(id) on delete cascade,
+  pet_id uuid references public.pm_pets(id) on delete cascade,
+  tipo text not null,
+  camera_id uuid references public.pm_cameras(id) on delete set null,
+  x numeric(5, 4), y numeric(5, 4), w numeric(5, 4), h numeric(5, 4),
+  imagem_path text,
+  sumido boolean not null default false,
+  visto_em timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.pm_objetos enable row level security;
+drop policy if exists pm_objetos_ler on public.pm_objetos;
+create policy pm_objetos_ler on public.pm_objetos for select to authenticated using (public.pm_is_membro());
+
 -- Log do programa de casa (a janela do iniciar.bat) visível no app, só para admin
 create table if not exists public.pm_logs (
   id bigint generated always as identity primary key,

@@ -130,8 +130,18 @@ def capturar_alta(cam: dict) -> np.ndarray:
     return capturar(cam)
 
 
+_travas: dict[str, threading.Lock] = {}
+
+
 def capturar(cam: dict) -> np.ndarray:
-    """Um quadro da câmera (BGR). `fonte`: rtsp | http | arquivo."""
+    """Um quadro da câmera (BGR). Uma câmera por vez: a varredura e a captura rápida não abrem a mesma câmera ao mesmo tempo."""
+    chave = str(cam.get("host") or cam.get("url") or cam.get("caminho") or id(cam))
+    with _travas.setdefault(chave, threading.Lock()):
+        return _capturar(cam)
+
+
+def _capturar(cam: dict) -> np.ndarray:
+    """`fonte`: rtsp | http | arquivo."""
     fonte = cam.get("fonte", "rtsp")
     if fonte == "rtsp":
         return _rtsp(cam["url"])

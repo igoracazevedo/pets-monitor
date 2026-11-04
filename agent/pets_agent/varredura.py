@@ -2,7 +2,8 @@ import re
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -113,6 +114,33 @@ class Varredura:
         self.tamanhos = MemoriaTamanhos(cfg.get("arquivo_tamanhos", "tamanhos.json"))
         self.ultimo_quadro: dict[str, float] = {}
         self.falhas: dict[str, tuple[int, float]] = {}  # câmera -> (falhas seguidas, só tenta de novo depois de)
+        # catálogo de objetos (procura bebedouro/comedouro pela aparência, onde estiverem) e imagens guardadas 12 h para a segunda leitura
+        self.catalogo = None
+        if (cfg.get("catalogo") or {}).get("ativo", True):
+            from .catalogo import Catalogo
+
+            pasta = (cfg.get("catalogo") or {}).get("pasta") or Path(__file__).resolve().parent.parent / "catalogo"
+            self.catalogo = Catalogo(db, Path(pasta), self._nome_pet, self._nome_camera)
+        self.buffer = None
+        bf = cfg.get("buffer") or {}
+        if bf.get("ativo", True):
+            from .buffer import Buffer
+
+            self.buffer = Buffer(bf.get("pasta"), bf.get("horas", 12), bf.get("max_mb", 2000))
+        self.eventos_recentes: list[tuple[str, str | None, float]] = []
+        self.eventos_carga = 0.0
+        self.rev_ultima: dict[str, float] = {}
+        self.rev_caixa: dict[str, tuple[float, tuple]] = {}
+        self.rev_prev: dict[str, np.ndarray] = {}
+        self.rev_vistos: dict[str, dict[str, float]] = {}
+        self.rev_banheiro: dict[str, dict] = {}
+        self.aviso_tapete: dict[str, float] = {}
+
+    def _nome_pet(self, pid):
+        return next((p["nome"] for p in self.pets if p["id"] == pid), None)
+
+    def _nome_camera(self, cid):
+        return next((r["nome"] for _, r in self.cameras if r["id"] == cid), cid[:6])
 
     def proteger(self, frame, cid: str | None = None):
         """Imagem que pode sair do PC: corpo das pessoas desfocado, só o rosto nítido (desligue com proteger_pessoas: false)."""
@@ -233,6 +261,8 @@ class Varredura:
             self.zonas = {}
             for z in self.db.zonas():
                 self.zonas.setdefault(z["camera_id"], []).append(z)
+            if getattr(self, "catalogo", None):
+                self.catalogo.sincronizar(self.zonas)
         except Exception:
             pass  # SQL ainda não rodado
 
@@ -313,13 +343,17 @@ class Varredura:
             achados.append((d, p))
             marcas.append((d.caixa, p.nome or "?"))
 
-        zs = getattr(self, "zonas", {}).get(cid, [])
-        tem = lambda t: any(z.get("tipo") == t for z in zs)
-        if "banheiro" in _sem_acento(nome) or "quarto" in _sem_acento(nome) or tem("bebedouro") or tem("comedouro") or tem("banheiro"):
+        self._catalogar(cid, frame, dets, time.time(), aprender=True)
+        if self.buffer:
+            try:
+                self.buffer.salvar(cid, frame, revisado=True)  # já analisada agora: a segunda leitura pula esta
+            except Exception as e:
+                print(f"  buffer: {e}", flush=True)
+        if self._vigia_eventos(cid, nome):
             try:
                 self.vigiar_agua(cid, nome, frame, achados)
                 self.vigiar_comida(cid, nome, frame, achados)
-                if "banheiro" in _sem_acento(nome) or tem("banheiro"):
+                if self._eh_banheiro(cid, nome):
                     self.vigiar_banheiro(cid, nome, frame, dets)
             except Exception as e:
                 print(f"  banheiro {nome}: {e}", flush=True)
@@ -383,29 +417,66 @@ class Varredura:
             nomes = (nomes + ", " if nomes else "") + (", ".join(quem) + (" + " if quem and desconhecidas else "") if quem else "") + (f"{desconhecidas} pessoa(s)" if desconhecidas or not quem else "")
         return f"{nome}: {nomes or 'ninguém'}"
 
-    def vigiar_agua(self, cid: str, nome: str, frame, achados):
-        """Bicho com o corpo em cima da zona da vasilha de água (config `zona_agua`: x, y, largura, altura de 0 a 1) = bebeu água."""
-        marcadas = [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "bebedouro"]
-        if marcadas:  # os bebedouros que você marcou nas fotos do Histórico valem mais que o padrão
+    def _tem_zona(self, cid: str, tipo: str) -> bool:
+        return any(z.get("tipo") == tipo for z in getattr(self, "zonas", {}).get(cid, []))
+
+    def _eh_banheiro(self, cid: str, nome: str) -> bool:
+        return "banheiro" in _sem_acento(nome) or self._tem_zona(cid, "banheiro")
+
+    def _vigia_eventos(self, cid: str, nome: str) -> bool:
+        """Câmera onde vale procurar água/comida/banheiro: pelo nome, pelos locais marcados ou pelo catálogo (objeto que mudou de câmera)."""
+        n = _sem_acento(nome)
+        cat = getattr(self, "catalogo", None)
+        return bool("banheiro" in n or "quarto" in n or self._tem_zona(cid, "bebedouro") or self._tem_zona(cid, "comedouro") or self._tem_zona(cid, "banheiro") or (cat and cat.tem_na_camera(cid)))
+
+    def camera_rapida(self, cid: str, nome: str) -> bool:
+        return self._vigia_eventos(cid, nome)
+
+    def _alvos(self, cid: str, tipo: str) -> list[tuple[float, float, float, float]]:
+        """Onde estão (x, y, largura, altura de 0 a 1) os bebedouros/comedouros nesta câmera: do catálogo (onde estiverem agora) ou, sem catálogo, os locais marcados."""
+        cat = getattr(self, "catalogo", None)
+        if cat and cat.tem_tipo(tipo):
+            return [tuple(b) for b in cat.caixas(cid, tipo)]
+        return [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == tipo]
+
+    def vigiar_agua(self, cid: str, nome: str, frame, achados, quando: float | None = None):
+        """Bicho com o corpo em cima da vasilha de água (marcada no app e acompanhada pelo catálogo) = bebeu água."""
+        marcadas = self._alvos(cid, "bebedouro")
+        if marcadas:  # os bebedouros do catálogo valem mais que o padrão
             lista = marcadas
+        elif getattr(self, "catalogo", None) and self.catalogo.tem_tipo("bebedouro"):
+            return  # o catálogo sabe onde estão os bebedouros e nenhum está nesta câmera
         else:
             zonas = {**ZONAS_AGUA, **{k.lower(): v for k, v in (self.cfg.get("zonas_agua") or {}).items()}}
             chave_zona = next((k for k in sorted(zonas, key=len, reverse=True) if k in _sem_acento(nome)), None)
             if not chave_zona:
                 return
             lista = [tuple(zonas[chave_zona])]
-        self._evento_por_zona("agua", cid, nome, frame, achados, lista, intervalo=600, parado=3600)
+        self._evento_por_zona("agua", cid, nome, frame, achados, lista, intervalo=600, parado=3600, quando=quando)
 
-    def vigiar_comida(self, cid: str, nome: str, frame, achados):
-        """Bicho com a boca nos comedouros que você marcou nas fotos (em qualquer câmera) = comendo."""
-        lista = [(float(z["x"]), float(z["y"]), float(z["w"]), float(z["h"])) for z in getattr(self, "zonas", {}).get(cid, []) if z.get("tipo") == "comedouro"]
+    def vigiar_comida(self, cid: str, nome: str, frame, achados, quando: float | None = None):
+        """Bicho com a boca nos comedouros (do catálogo, em qualquer câmera) = comendo."""
+        lista = self._alvos(cid, "comedouro")
         if lista:
-            self._evento_por_zona("comeu", cid, nome, frame, achados, lista, intervalo=900, parado=1200)
+            self._evento_por_zona("comeu", cid, nome, frame, achados, lista, intervalo=900, parado=1200, quando=quando)
 
-    def _evento_por_zona(self, tipo: str, cid: str, nome: str, frame, achados, lista, intervalo: int, parado: int):
+    def _lembrar(self, tipo: str, pet_id, t: float):
+        if not hasattr(self, "eventos_recentes"):
+            self.eventos_recentes = []
+        self.eventos_recentes.append((tipo, pet_id, t))
+
+    def _ja_registrado(self, tipo: str, pet_id, t: float, janela: float) -> bool:
+        """Já existe evento igual (mesmo tipo, mesmo bicho ou bicho desconhecido) perto desse horário? Evita repetir o que a varredura ou você já registraram."""
+        return any(tp == tipo and abs(ts - t) < janela and (pid == pet_id or pid is None or pet_id is None) for tp, pid, ts in getattr(self, "eventos_recentes", []))
+
+    def _evento_por_zona(self, tipo: str, cid: str, nome: str, frame, achados, lista, intervalo: int, parado: int, quando: float | None = None):
         """Corpo do bicho sobre a região (bebedouro/comedouro): registra o evento com foto, no máximo 1 a cada `intervalo` s por bicho
-        e sem repetir enquanto ele continua exatamente parado no mesmo lugar (dormindo ao lado) por até `parado` s."""
+        e sem repetir enquanto ele continua exatamente parado no mesmo lugar (dormindo ao lado) por até `parado` s.
+        `quando` = horário da imagem (segunda leitura em segundo plano); sem ele vale agora."""
         h, w = frame.shape[:2]
+        retro = quando is not None
+        t = quando if retro else time.time()
+        ultima, caixas = (self.rev_ultima, self.rev_caixa) if retro else (self.ultima_agua, self.caixa_agua)
         for d, p in achados:
             if d.especie == "pessoa":
                 continue
@@ -413,26 +484,30 @@ class Varredura:
             if not any(max(0.0, min(x2, zx + zw) - max(x1, zx)) * max(0.0, min(y2, zy + zh) - max(y1, zy)) >= 0.35 * zw * zh for zx, zy, zw, zh in lista):
                 continue
             chave = f"{tipo}:{p.pet_id or '?' + cid}"
-            if time.time() - self.ultima_agua.get(chave, 0) < intervalo:
+            if abs(t - ultima.get(chave, 0)) < intervalo:
                 continue
-            antes = self.caixa_agua.get(chave)
-            if antes and time.time() - antes[0] < parado and _iou(d.caixa, antes[1]) > 0.7:
+            antes = caixas.get(chave)
+            if antes and abs(t - antes[0]) < parado and _iou(d.caixa, antes[1]) > 0.7:
                 continue
-            self.ultima_agua[chave] = time.time()
-            self.caixa_agua[chave] = (time.time(), d.caixa)
+            ultima[chave] = t
+            caixas[chave] = (t, d.caixa)
+            if self._ja_registrado(tipo, p.pet_id, t, intervalo):
+                continue  # a varredura normal, a segunda leitura ou você já registraram este
             pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
-            foto = f"avistamentos/{datetime.now():%Y/%m/%d}/{tipo}-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
+            dt = datetime.fromtimestamp(t)
+            foto = f"avistamentos/{dt:%Y/%m/%d}/{tipo}-{cid[:8]}-{dt:%H%M%S}.jpg"
             self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
-            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(t, timezone.utc).isoformat()})
+            self._lembrar(tipo, pet["id"] if pet else None, t)
             frase = "bebeu água" if tipo == "agua" else "comendo"
-            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}", flush=True)
-            if self.notificador and self.notificador.ativo:  # todo evento vai para o celular
+            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}{' (achado na segunda leitura, ' + format(dt, '%H:%M') + ')' if retro else ''}", flush=True)
+            if self.notificador and self.notificador.ativo and time.time() - t < 3600:  # todo evento recente vai para o celular
                 if tipo == "agua":
                     titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
                 else:
                     titulo = f"{pet['nome']} comendo" if pet else "Uma das cachorras comendo"
                 try:
-                    self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"{tipo}-{int(time.time())}")
+                    self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto), f"{tipo}-{int(t)}")
                 except Exception as e:
                     print(f"  aviso: {e}", flush=True)
 
@@ -460,8 +535,12 @@ class Varredura:
             return
         r = self.banheiro.classificar(cid, frame, recorte)
         if r is None:
+            if time.time() - self.aviso_tapete.get(cid, 0) > 1800:  # sem exemplos: avisa no log em vez de ficar calado
+                self.aviso_tapete[cid] = time.time()
+                print(f"  {nome}: tapete sem exemplos suficientes. Ensine 'limpo', 'xixi' e 'coco' (comando 'limpo no {nome}')", flush=True)
             return
-        rot, _ = r
+        rot, dist = r
+        print(f"  {nome}: tapete {rot} (distância {dist:.2f})", flush=True)
         antes = self.estado_banheiro.get(cid)
         if rot == "desconhecido" or rot == antes:
             return
@@ -470,6 +549,7 @@ class Varredura:
             return
         if rot == "limpo":  # alguém limpou: o aviso da tela Início volta a "limpo"
             self.db.evento_banheiro({"camera_id": cid, "tipo": "limpo", "visto_em": agora()})
+            self._lembrar("limpo", None, time.time())
             if self.notificador and self.notificador.ativo:
                 try:
                     self.notificador.enviar("Tapete limpo", f"Visto no {nome} às {datetime.now():%H:%M}", None, f"limpo-{int(time.time())}")
@@ -483,12 +563,141 @@ class Varredura:
         foto = f"avistamentos/{datetime.now():%Y/%m/%d}/banheiro-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
         self.db.enviar_foto(foto, _jpeg(self.proteger(frame, cid), self.cfg["largura_foto"]))
         self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+        self._lembrar(rot, pet["id"] if pet else None, time.time())
         print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''}", flush=True)
         if self.notificador and self.notificador.ativo:  # sempre avisa: xixi/cocô novo no banheiro
             algo = "xixi" if rot == "xixi" else "cocô"
             titulo = f"{pet['nome']} fez {algo}" if pet else f"As cachorras fizeram {algo}"
             try:
                 self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"banheiro-{int(time.time())}")
+            except Exception as e:
+                print(f"  aviso: {e}", flush=True)
+
+    # --- catálogo de objetos ---
+    def _catalogar(self, cid: str, frame, dets, t: float, aprender: bool = False):
+        """Aprende a aparência dos objetos marcados e confere onde estão nesta imagem (mudou de lugar? de câmera?)."""
+        if not getattr(self, "catalogo", None):
+            return
+        h, w = frame.shape[:2]
+        ocupados = [(d.caixa[0] / w, d.caixa[1] / h, (d.caixa[2] - d.caixa[0]) / w, (d.caixa[3] - d.caixa[1]) / h) for d in dets]
+        try:
+            if aprender:
+                self.catalogo.aprender(cid, frame, ocupados)
+            self.catalogo.atualizar(cid, frame, ocupados, any(d.especie != "pessoa" for d in dets), t)
+        except Exception as e:
+            print(f"  catálogo: {e}", flush=True)
+
+    # --- segunda leitura em segundo plano (imagens guardadas por 12 h) ---
+    def iniciar_buffer(self):
+        """Liga a captura rápida (uma imagem a cada 30 s das câmeras de banheiro/bebedouro/comedouro)."""
+        if not self.buffer:
+            return
+        from .buffer import CapturaRapida
+
+        CapturaRapida(self, float((self.cfg.get("buffer") or {}).get("intervalo_s", 30))).start()
+        print(f"Imagens guardadas por {self.buffer.horas:g} h em {self.buffer.pasta} (só neste computador) para uma segunda leitura.", flush=True)
+
+    def _atualizar_eventos(self):
+        """Eventos das últimas 14 h (inclusive os que você registrou à mão): a segunda leitura não repete nenhum."""
+        if time.time() - self.eventos_carga < 300:
+            return
+        self.eventos_carga = time.time()
+        try:
+            desde = datetime.fromtimestamp(time.time() - 14 * 3600, timezone.utc).isoformat()
+            linhas = self.db.eventos_desde(desde)
+            self.eventos_recentes = [(l["tipo"], l.get("pet_id"), datetime.fromisoformat(l["visto_em"].replace("Z", "+00:00")).timestamp()) for l in linhas]
+        except Exception as e:
+            print(f"  segunda leitura: não consegui ler os eventos ({e})", flush=True)
+
+    def revisar(self, limite: int = 4, orcamento_s: float = 8.0) -> int:
+        """Lê as imagens guardadas ainda não lidas (da mais antiga para a mais nova) e registra o que passou despercebido."""
+        if not self.buffer:
+            return 0
+        self._atualizar_eventos()
+        feitas, ini = 0, time.time()
+        for cid, caminho, ts in self.buffer.pendentes(limite):
+            if time.time() - ini > orcamento_s:
+                break
+            try:
+                frame = cv2.imread(str(caminho))
+                if frame is not None:
+                    self._rever_quadro(cid, frame, ts)
+            except Exception as e:
+                print(f"  segunda leitura: {e}", flush=True)
+            self.buffer.marcar(caminho)
+            feitas += 1
+        return feitas
+
+    def _rever_quadro(self, cid: str, frame, ts: float):
+        reg = next((r for _, r in self.cameras if r["id"] == cid), None)
+        if not reg or reg.get("ativo") is False:
+            return
+        nome = reg["nome"]
+        mini = cv2.cvtColor(cv2.resize(frame, (64, 36)), cv2.COLOR_BGR2GRAY).astype(np.int16)
+        ant = self.rev_prev.get(cid)
+        self.rev_prev[cid] = mini
+        if ant is not None and float(np.abs(mini - ant).mean()) < 1.5:
+            return  # cena parada desde a imagem anterior: nada novo para ver
+        dets, palpites = self.analisar(frame, cid, aprender=False)
+        achados = list(zip(dets, palpites))
+        for d, p in achados:
+            if p.pet_id and d.especie != "pessoa":
+                self.rev_vistos.setdefault(cid, {})[p.pet_id] = ts
+        self._catalogar(cid, frame, dets, ts)
+        if not self._vigia_eventos(cid, nome):
+            return
+        self.vigiar_agua(cid, nome, frame, achados, quando=ts)
+        self.vigiar_comida(cid, nome, frame, achados, quando=ts)
+        if self._eh_banheiro(cid, nome):
+            self._rever_banheiro(cid, nome, frame, dets, ts)
+
+    def _rever_banheiro(self, cid: str, nome: str, frame, dets, ts: float):
+        """Tapete na segunda leitura: o estado novo só vale depois de aparecer em 2 imagens seguidas (evita falso alarme)."""
+        recorte = self.recorte_banheiro(cid)
+        h, w = frame.shape[:2]
+        for d in dets:
+            x1, y1, x2, y2 = d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h
+            if not recorte or (min(x2, recorte[0] + recorte[2]) > max(x1, recorte[0]) and min(y2, recorte[1] + recorte[3]) > max(y1, recorte[1])):
+                return  # alguém em cima do tapete
+        r = self.banheiro.classificar(cid, frame, recorte)
+        if r is None or r[0] == "desconhecido":
+            return
+        rot = r[0]
+        st = self.rev_banheiro.setdefault(cid, {"atual": None, "cand": None, "n": 0})
+        if st["atual"] is None:
+            st["atual"] = rot
+            return
+        if rot == st["atual"]:
+            st["cand"], st["n"] = None, 0
+            return
+        st["n"] = st["n"] + 1 if st["cand"] == rot else 1
+        st["cand"] = rot
+        if st["n"] < 2:
+            return
+        st["atual"], st["cand"], st["n"] = rot, None, 0
+        pid = None
+        vistos = [(t0, p) for p, t0 in self.rev_vistos.get(cid, {}).items() if 0 <= ts - t0 < 900]
+        if vistos and rot != "limpo":
+            pid = max(vistos)[1]
+        if self._ja_registrado(rot, pid, ts, 1800):
+            return
+        pet = next((x for x in self.pets if x["id"] == pid), None) if pid else None
+        dt = datetime.fromtimestamp(ts)
+        foto = None
+        if rot != "limpo":
+            foto = f"avistamentos/{dt:%Y/%m/%d}/banheiro-{cid[:8]}-{dt:%H%M%S}.jpg"
+            self.db.enviar_foto(foto, _jpeg(self.proteger(frame, cid), self.cfg["largura_foto"]))
+        self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(ts, timezone.utc).isoformat()})
+        self._lembrar(rot, pet["id"] if pet else None, ts)
+        print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''} (achado na segunda leitura, {dt:%H:%M})", flush=True)
+        if self.notificador and self.notificador.ativo and time.time() - ts < 3600:
+            try:
+                if rot == "limpo":
+                    titulo = "Tapete limpo"
+                else:
+                    algo = "xixi" if rot == "xixi" else "cocô"
+                    titulo = f"{pet['nome']} fez {algo}" if pet else f"As cachorras fizeram {algo}"
+                self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto) if foto else None, f"banheiro-{int(ts)}")
             except Exception as e:
                 print(f"  aviso: {e}", flush=True)
 

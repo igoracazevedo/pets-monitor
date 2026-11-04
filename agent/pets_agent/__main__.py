@@ -422,6 +422,8 @@ def cmd_varrer(args):
     if v.cred:
         print(f"Procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s). Dê apelido a cada uma na aba Câmeras do site.")
     print(f"Varrendo {len(v.cameras)} câmera(s) a cada {cfg['intervalo_s']} s. Ctrl+C para parar.")
+    v.iniciar_buffer()
+    ultima_limpeza = 0.0
     ultimo_sync = 0.0
     ultima_varredura = 0.0
     ultima_lista = 0.0
@@ -486,6 +488,11 @@ def cmd_varrer(args):
                     fila_manut = manutencao.pendentes(db)
                 if fila_manut:
                     manutencao.rodar(v, limite=5, lista=fila_manut, mostrar=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
+            if not pedidos and v.buffer:  # segunda leitura das imagens guardadas: registra o que a varredura de 5 em 5 min deixou passar
+                v.revisar(4)
+                if ini - ultima_limpeza > 1800:
+                    ultima_limpeza = ini
+                    v.buffer.limpar()
         except Exception as e:  # nunca morre por um erro isolado
             print("Erro na varredura:", e, flush=True)
         time.sleep(2)

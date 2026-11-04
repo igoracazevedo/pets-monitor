@@ -41,3 +41,14 @@ cameras:
   # - nome: Teste
   #   fonte: arquivo
   #   caminho: exemplos/sala.jpg
+
+# Imagens guardadas só neste PC (fora do OneDrive) para uma segunda leitura em segundo plano que acha eventos perdidos
+# buffer:
+#   ativo: true
+#   horas: 12
+#   intervalo_s: 30      # câmeras de banheiro/bebedouro/comedouro: uma imagem a cada 30 s
+#   max_mb: 2000
+#   pasta: D:\pets-buffer   # opcional; o padrão é %LOCALAPPDATA%\pets-monitor\buffer
+# Catálogo: procura bebedouro/comedouro/banheiro/cama pela aparência, mesmo que mudem de lugar ou de câmera
+# catalogo:
+#   ativo: true

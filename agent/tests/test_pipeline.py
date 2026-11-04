@@ -556,3 +556,118 @@ def test_mensagem_do_ensino():
 
 
 test_mensagem_do_ensino()
+
+
+def _cenario(seed, itens=()):
+    """Fundo com textura (fixo por câmera) e 'vasilhas' = retalhos coloridos com textura: (x, y, escala)."""
+    rng = np.random.default_rng(seed)
+    f = cv2.GaussianBlur(rng.integers(50, 170, (360, 640, 3)).astype(np.uint8), (0, 0), 2)
+    padrao = np.clip(np.array((180, 110, 230)) + np.random.default_rng(99).integers(-60, 60, (43, 64, 3)), 0, 255).astype(np.uint8)
+    for x, y, esc in itens:
+        p = cv2.resize(padrao, (int(64 * esc), int(43 * esc)))
+        f[y : y + p.shape[0], x : x + p.shape[1]] = p
+    return f
+
+
+def test_catalogo_acompanha_o_objeto():
+    from pets_agent.catalogo import Catalogo
+
+    class DB:
+        def __init__(s): s.fotos, s.linhas = [], []
+        def enviar_foto(s, c, b): s.fotos.append(c)
+        def objeto(s, l): s.linhas.append(l)
+
+    with tempfile.TemporaryDirectory() as d:
+        db = DB()
+        cat = Catalogo(db, Path(d), lambda pid: "Mavi", lambda cid: {"A": "Banheiro", "B": "Sala"}.get(cid, cid))
+        z = {"A": [{"id": "z1", "tipo": "bebedouro", "pet_id": "p1", "x": 0.2, "y": 0.5, "w": 0.1, "h": 0.12}]}
+        cat.sincronizar(z)
+        assert cat.caixas("A", "bebedouro") == [(0.2, 0.5, 0.1, 0.12)]            # antes de aprender vale o lugar marcado
+        cat.aprender("A", _cenario(1, [(128, 180, 1.0)]), [(0.2, 0.5, 0.1, 0.12)])  # bicho em cima: não aprende
+        assert cat.objetos["z1"].dia is None
+        cat.aprender("A", _cenario(1, [(128, 180, 1.0)]), [])
+        assert cat.objetos["z1"].dia is not None and db.fotos == ["objetos/z1.jpg"] and db.linhas[-1]["pet_id"] == "p1"
+        # mudou um pouco de lugar na mesma câmera: o catálogo acompanha
+        cat.atualizar("A", _cenario(1, [(148, 190, 1.0)]), [], False, 1000)
+        x, y, _, _ = cat.caixas("A", "bebedouro")[0]
+        assert abs(x - 148 / 640) < 0.02 and abs(y - 190 / 360) < 0.03, (x, y)
+        # bicho em cima da vasilha: não dá para conferir, continua onde estava
+        antes = cat.caixas("A", "bebedouro")[0]
+        cat.atualizar("A", _cenario(1), [(antes[0], antes[1], antes[2], antes[3])], True, 1100)
+        assert cat.caixas("A", "bebedouro")[0] == antes and not cat.objetos["z1"].sumido
+        # foi para outra câmera (e maior): só muda depois de 3 conferências seguidas
+        for i, t in enumerate((2000, 2250, 2500)):
+            cat.atualizar("B", _cenario(7, [(400, 100, 1.4)]), [], True, t)
+        assert cat.caixas("B", "bebedouro") and not cat.caixas("A", "bebedouro")
+        bx = cat.caixas("B", "bebedouro")[0]
+        assert abs(bx[0] - 400 / 640) < 0.03 and abs(bx[1] - 100 / 360) < 0.04, bx
+        # reiniciando o programa o recorte continua guardado em disco
+        cat2 = Catalogo(db, Path(d))
+        cat2.sincronizar(z)
+        assert cat2.objetos["z1"].dia is not None
+        # outra câmera sem a vasilha não rouba o objeto
+        cat3 = Catalogo(db, Path(d)); cat3.sincronizar(z)
+        for t in (5000, 5250, 5500):
+            cat3.atualizar("B", _cenario(7), [], True, t)
+        assert cat3.caixas("A", "bebedouro") and not cat3.caixas("B", "bebedouro")
+    print("catálogo: acha o objeto onde ele estiver (outro lugar, outra câmera), sem trocar à toa: ok")
+
+
+test_catalogo_acompanha_o_objeto()
+
+
+def test_buffer_e_segunda_leitura():
+    import time as T
+    from pets_agent import varredura as V
+    from pets_agent.buffer import Buffer
+    from pets_agent.detect import Deteccao
+
+    with tempfile.TemporaryDirectory() as d:
+        b = Buffer(Path(d), horas=12)
+        f = np.zeros((90, 160, 3), np.uint8)
+        agora = T.time()
+        velho = b.salvar("c1", f, agora - 13 * 3600)
+        novo = b.salvar("c1", f, agora - 600)
+        lido = b.salvar("c1", f, agora - 300, revisado=True)
+        assert [p.name for _, p, _ in b.pendentes(10)] == [velho.name, novo.name]   # os já lidos ficam de fora, do mais antigo ao mais novo
+        b.marcar(novo)
+        assert [p for _, p, _ in b.pendentes(10)] == [velho]
+        assert b.limpar() == 1 and not velho.exists() and lido.exists()               # passou de 12 h: apaga
+
+        class Pal: pet_id = "p1"; como = "cor"; nome = "Mavi"; pessoa_id = None
+
+        class DB:
+            def __init__(s): s.ev, s.fotos, s.antigos = [], [], []
+            def enviar_foto(s, c, x): s.fotos.append(c)
+            def evento_banheiro(s, r): s.ev.append(r)
+            def eventos_desde(s, iso): return s.antigos
+        v = V.Varredura.__new__(V.Varredura)
+        v.cfg = {"largura_foto": 960, "proteger_pessoas": False}; v.db = DB(); v.notificador = None
+        v.pets = [{"id": "p1", "nome": "Mavi"}]
+        v.cameras = [({}, {"id": "cam1", "nome": "Banheiro", "ativo": True})]
+        v.zonas = {"cam1": [{"tipo": "bebedouro", "x": 0.1, "y": 0.4, "w": 0.2, "h": 0.2}]}
+        v.catalogo = None; v.buffer = Buffer(Path(d) / "b2")
+        v.eventos_recentes = []; v.eventos_carga = 0.0
+        v.rev_ultima, v.rev_caixa, v.rev_prev, v.rev_vistos, v.rev_banheiro = {}, {}, {}, {}, {}
+        v.analisar = lambda frame, cid, aprender=False: ([Deteccao("dog", 0.9, (20, 40, 60, 80))], [Pal()])  # cachorra em cima da vasilha
+        ts = agora - 7200  # 2 h atrás
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 10, np.uint8), ts)
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 200, np.uint8), ts + 60)       # outra cena: lida também, mas o 2º bebeu é o mesmo evento
+        assert v.revisar(10) == 2 and not v.buffer.pendentes(10)
+        assert [e["tipo"] for e in v.db.ev] == ["agua"] and v.db.ev[0]["pet_id"] == "p1"
+        quando = datetime.fromisoformat(v.db.ev[0]["visto_em"]).timestamp()
+        assert abs(quando - ts) < 2, "o evento leva a hora da imagem, não a hora da leitura"
+        # já registrado (pela varredura ou por você) perto desse horário: não repete
+        v.db.ev.clear(); v.rev_ultima.clear(); v.rev_caixa.clear()
+        v.eventos_recentes = [("agua", "p1", ts + 3600 + 100)]
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 90, np.uint8), ts + 3600)
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 250, np.uint8), ts + 3700)
+        v.eventos_carga = T.time()
+        v.revisar(10)
+        assert not v.db.ev
+    print("imagens guardadas 12 h e segunda leitura: registra o que faltou, na hora certa, sem repetir: ok")
+
+
+from datetime import datetime
+
+test_buffer_e_segunda_leitura()

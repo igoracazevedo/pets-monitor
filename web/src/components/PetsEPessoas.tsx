@@ -1,24 +1,25 @@
 import { useState } from 'react'
 import Pets from './Pets'
 import Pessoas from './Pessoas'
+import Catalogo from './Catalogo'
 
 /** Pets e pessoas na mesma aba, com um seletor no topo. */
 export default function PetsEPessoas({ admin }: { admin: boolean }) {
-  const [parte, setParte] = useState<'pets' | 'pessoas'>('pets')
+  const [parte, setParte] = useState<'pets' | 'pessoas' | 'objetos'>('pets')
   return (
     <div className="space-y-4">
       <div className="mx-auto flex w-fit gap-1 rounded-full bg-slate-100 p-1">
-        {(['pets', 'pessoas'] as const).map((p) => (
+        {(['pets', 'pessoas', 'objetos'] as const).map((p) => (
           <button
             key={p}
             onClick={() => setParte(p)}
-            className={`rounded-full px-5 py-1.5 text-[13px] font-semibold transition ${parte === p ? 'bg-white text-[#0e7490] shadow-sm' : 'text-slate-500'}`}
+            className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition ${parte === p ? 'bg-white text-[#0e7490] shadow-sm' : 'text-slate-500'}`}
           >
-            {p === 'pets' ? 'Pets' : 'Pessoas'}
+            {p === 'pets' ? 'Pets' : p === 'pessoas' ? 'Pessoas' : 'Objetos'}
           </button>
         ))}
       </div>
-      {parte === 'pets' ? <Pets admin={admin} /> : <Pessoas admin={admin} />}
+      {parte === 'pets' ? <Pets admin={admin} /> : parte === 'pessoas' ? <Pessoas admin={admin} /> : <Catalogo />}
     </div>
   )
 }
