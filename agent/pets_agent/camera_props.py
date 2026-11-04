@@ -31,6 +31,10 @@ def carregar_cameras(arquivo: str | Path) -> list[dict]:
             if not c.get("host") or not senha:
                 continue
             out.append({"nome": nome, "ambiente": nome, "fonte": "intelbras", "host": c["host"], "usuario": usuario or "admin", "senha": senha})
+        elif tipo == "foto":  # câmera que entrega foto JPEG por HTTP (endereço que o `sondar --onvif` mostra)
+            if not c.get("foto"):
+                continue
+            out.append({"nome": nome, "ambiente": nome, "fonte": "http", "url": c["foto"], "usuario": usuario, "senha": senha})
         elif tipo == "rtsp":
             url = c.get("rtsp", "")
             if not url:

@@ -363,6 +363,20 @@ def _onvif(ip: str, porta: int, usuario: str = "", senha: str = "", timeout: flo
             )
             u = re.search(r"<[^>]*Uri>([^<]+)</", uri)
             saida.append(f"perfil {t}" + (f" ({codecs[i]})" if i < len(codecs) else "") + f": {u.group(1) if u else 'sem endereço'}")
+            foto = chamar(
+                media,
+                f'<GetSnapshotUri xmlns="http://www.onvif.org/ver10/media/wsdl"><ProfileToken>{t}</ProfileToken></GetSnapshotUri>',
+            )
+            f = re.search(r"<[^>]*Uri>([^<]+)</", foto)
+            if not f:
+                saida.append(f"  foto do perfil {t}: a câmera não oferece")
+                continue
+            alvo = re.sub(r"^http://[^/]+", f"http://{ip}:{porta}", f.group(1)) if f.group(1).startswith("http://") and f"{ip}" not in f.group(1) else f.group(1)
+            try:
+                quadro = capture._http(alvo, usuario, senha)
+                saida.append(f"  foto do perfil {t}: FUNCIONA {alvo} ({quadro.shape[1]}x{quadro.shape[0]})")
+            except Exception as e:
+                saida.append(f"  foto do perfil {t}: {alvo} não abriu ({str(e)[:70]})")
     except Exception as e:
         saida.append(f"não consegui falar ONVIF em {ip}:{porta} ({type(e).__name__}: {str(e)[:80]})")
     return saida

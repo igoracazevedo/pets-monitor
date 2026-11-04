@@ -58,8 +58,13 @@ def _rtsp(url: str, descartar: int = 5) -> np.ndarray:
 
 
 def _http(url: str, usuario: str | None, senha: str | None) -> np.ndarray:
-    auth = (usuario, senha) if usuario else None
-    r = requests.get(url, auth=auth, timeout=(4, 8))
+    from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+
+    r = None
+    for auth in ((HTTPDigestAuth(usuario, senha), HTTPBasicAuth(usuario, senha)) if usuario else (None,)):  # a câmera escolhe Digest ou Basic
+        r = requests.get(url, auth=auth, timeout=(4, 8))
+        if r.status_code != 401:
+            break
     r.raise_for_status()
     img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
