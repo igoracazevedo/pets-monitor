@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 
 export type ItemFoto = { id: string; url: string; titulo?: string; legenda?: string; extra?: unknown }
@@ -15,6 +15,8 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
   const [salvando, setSalvando] = useState(false)
   const [feitas, setFeitas] = useState<{ caixa: Caixa; nome: string; foto: string }[]>([])
   const areaImg = useRef<HTMLDivElement>(null)
+  const miolo = useRef<HTMLDivElement>(null)
+  const [altura, setAltura] = useState(0)
   const item = itens[indice]
   const inicioToque = useRef<number | null>(null)
   const ir = (d: number) => itens.length > 1 && onIndice((indice + d + itens.length) % itens.length)
@@ -35,6 +37,17 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indice, itens.length])
 
+  // a foto ocupa só o espaço que sobra entre o cabeçalho e as barras de baixo (a barra de marcação não pode cobrir a imagem)
+  useLayoutEffect(() => {
+    const el = miolo.current
+    if (!el) return
+    const medir = () => setAltura(Math.max(120, el.clientHeight - 8))
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [item == null])
+
   if (!item) return null
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-black/95 text-white" onClick={onFechar} role="dialog" aria-modal="true">
@@ -54,7 +67,8 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
       </div>
 
       <div
-        className="relative flex min-h-0 flex-1 items-center justify-center"
+        ref={miolo}
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
         onTouchStart={(e) => (inicioToque.current = !modo && e.touches.length === 1 ? e.touches[0].clientX : null)}
         onTouchEnd={(e) => {
           if (inicioToque.current == null) return
@@ -64,7 +78,7 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
         }}
       >
         <div ref={areaImg} className="relative inline-block max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
-          <img src={item.url} alt={item.titulo ?? ''} className="block max-h-[calc(100dvh-9.5rem)] max-w-full object-contain" style={{ touchAction: modo ? 'none' : 'pinch-zoom' }} draggable={false} />
+          <img src={item.url} alt={item.titulo ?? ''} className="block max-w-full object-contain" style={{ touchAction: modo ? 'none' : 'pinch-zoom', maxHeight: altura || undefined }} draggable={false} />
           {feitas.filter((f) => f.foto === item.id).map((f, i) => (
             <div key={i} className="pointer-events-none absolute border-2 border-emerald-400" style={{ left: `${f.caixa.x * 100}%`, top: `${f.caixa.y * 100}%`, width: `${f.caixa.w * 100}%`, height: `${f.caixa.h * 100}%` }}>
               <span className="absolute -top-5 left-0 rounded bg-emerald-500 px-1 text-[11px] font-bold">{f.nome}</span>
@@ -152,14 +166,14 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
         </div>
       )}
       <div className="flex items-center justify-between gap-3 px-4 py-3 text-[12px] text-white/70" onClick={(e) => e.stopPropagation()}>
-        <span>{itens.length > 1 ? `${indice + 1} de ${itens.length}` : ''}</span>
+        <span className="shrink-0 whitespace-nowrap">{itens.length > 1 ? `${indice + 1} de ${itens.length}` : ''}</span>
         {marcar && (
-          <button className={`rounded-full px-4 py-2 text-sm font-bold ${modo ? 'bg-amber-300 text-black' : 'bg-white/15 text-white'}`} onClick={() => { setModo((m) => !m); setPendente(null); setArrasto(null) }}>
+          <button className={`rounded-full px-3 py-2 text-[13px] font-bold sm:px-4 sm:text-sm ${modo ? 'bg-amber-300 text-black' : 'bg-white/15 text-white'}`} onClick={() => { setModo((m) => !m); setPendente(null); setArrasto(null) }}>
             {modo ? 'Terminar marcação' : 'Marcar quem é'}
           </button>
         )}
         {acao && (
-          <button disabled={acao.ocupado} onClick={acao.onClick} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-[#0e7490] disabled:opacity-60">
+          <button disabled={acao.ocupado} onClick={acao.onClick} className="rounded-full bg-white px-3 py-2 text-[13px] font-bold text-[#0e7490] disabled:opacity-60 sm:px-4 sm:text-sm">
             {acao.ocupado ? 'Batendo foto…' : acao.rotulo}
           </button>
         )}
