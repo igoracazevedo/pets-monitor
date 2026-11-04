@@ -7,6 +7,14 @@ import { dataHora, haQuanto, minutosDesde } from '../lib/util'
 
 type Dados = { pets: Pet[]; pos: Posicao[]; cams: Camera[]; fotos: Record<string, string>; perfis: Record<string, string>; desconhecidos: number; gente: Presenca[]; banheiro: EventoBanheiro[] }
 
+/** Fotos que ilustram os avisos: a mais recente de cada câmera do banheiro e o último quadro das câmeras sem sinal. */
+function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[] {
+  const ultimas = new Map<string, string>()
+  for (const e of ev) if (e.snapshot_path && !ultimas.has(e.camera_id)) ultimas.set(e.camera_id, e.snapshot_path)
+  const quadros = cams.filter((c) => c.ultimo_quadro_path && (c.ultimo_status === 'erro' || ev.some((e) => e.camera_id === c.id))).map((c) => c.ultimo_quadro_path)
+  return [...ultimas.values(), ...quadros]
+}
+
 async function carregar(): Promise<Dados> {
   const [pets, pos, cams, desc, presenca, banheiro] = await Promise.all([
     supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'),
@@ -29,14 +37,14 @@ async function carregar(): Promise<Dados> {
     pos: p,
     cams: (cams.data ?? []) as Camera[],
     banheiro: (banheiro.data ?? []) as EventoBanheiro[],
-    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path), ...((banheiro.data ?? []) as EventoBanheiro[]).filter((b) => b.tipo !== 'limpo').slice(0, 6).map((b) => b.snapshot_path)]),
+    fotos: await urlsDasFotos([...p.map((x) => x.snapshot_path), ...gente.map((g) => g.snapshot_path), ...fotosDosAvisos((banheiro.data ?? []) as EventoBanheiro[], (cams.data ?? []) as Camera[])]),
     gente,
     perfis: await urlsDosPets(((pets.data ?? []) as Pet[]).map((x) => x.foto_perfil_path)),
     desconhecidos: desc.count ?? 0,
   }
 }
 
-type Aviso = { texto: string; tom: 'ok' | 'alerta' | 'erro' }
+type Aviso = { texto: string; tom: 'ok' | 'alerta' | 'erro'; foto?: string | null; quando?: string; titulo?: string }
 const lista = (n: string[]) => (n.length > 1 ? `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}` : (n[0] ?? ''))
 
 /** Avisos da tela Início: estado do banheiro (desde a última limpeza) e câmeras sem sinal. */
@@ -49,14 +57,14 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
     const iLimpo = evs.findIndex((e) => e.tipo === 'limpo') // eventos vêm do mais novo para o mais antigo
     const sujos = iLimpo < 0 ? evs : evs.slice(0, iLimpo)
     if (sujos.length === 0) {
-      if (evs[0]) out.push({ texto: `${nome}: limpo desde ${dataHora(evs[0].visto_em)}.`, tom: 'ok' })
+      if (evs[0]) out.push({ texto: `${nome}: limpo desde ${dataHora(evs[0].visto_em)}.`, tom: 'ok', foto: evs.find((e) => e.snapshot_path)?.snapshot_path ?? cam(cid)?.ultimo_quadro_path, quando: evs[0].visto_em, titulo: nome })
       continue
     }
     const tipos = ['xixi', 'coco'].filter((t) => sujos.some((e) => e.tipo === t)).map((t) => (t === 'coco' ? 'cocô' : 'xixi'))
     const quem = [...new Set(sujos.map((e) => d.pets.find((p) => p.id === e.pet_id)?.nome).filter((n): n is string => !!n))]
-    out.push({ texto: `${nome}: sujo de ${tipos.join(' e ')}${quem.length ? `, feito por ${lista(quem)}` : ', não sei quem fez'}. Último às ${dataHora(sujos[0].visto_em)}.`, tom: 'alerta' })
+    out.push({ texto: `${nome}: sujo de ${tipos.join(' e ')}${quem.length ? `, feito por ${lista(quem)}` : ', não sei quem fez'}. Último às ${dataHora(sujos[0].visto_em)}.`, tom: 'alerta', foto: sujos.find((e) => e.snapshot_path)?.snapshot_path ?? cam(cid)?.ultimo_quadro_path, quando: sujos[0].visto_em, titulo: nome })
   }
-  for (const c of d.cams) if (c.ativo && c.ultimo_status === 'erro') out.push({ texto: `Câmera ${c.nome} sem sinal${c.ultima_leitura ? ` desde ${dataHora(c.ultima_leitura)}` : ''}.`, tom: 'erro' })
+  for (const c of d.cams) if (c.ativo && c.ultimo_status === 'erro') out.push({ texto: `Câmera ${c.nome} sem sinal${c.ultima_leitura ? ` desde ${dataHora(c.ultima_leitura)}` : ''}.`, tom: 'erro', foto: c.ultimo_quadro_path, quando: c.ultima_leitura ?? undefined, titulo: c.nome })
   return out
 }
 
@@ -228,9 +236,15 @@ export default function Inicio({ admin }: { admin: boolean }) {
           <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Avisos</p>
           <ul className="space-y-1.5">
             {avisos.map((a, k) => (
-              <li key={k} className="flex items-start gap-2 text-[13px] text-slate-800">
-                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${a.tom === 'alerta' ? 'bg-amber-500' : a.tom === 'erro' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                <span>{a.texto}</span>
+              <li key={k} className="flex items-center gap-3 text-[13px] text-slate-800">
+                {a.foto && dados.fotos[a.foto] ? (
+                  <button type="button" className="shrink-0" onClick={() => abrir([{ id: `aviso-${k}`, url: dados.fotos[a.foto!], titulo: a.titulo ?? 'Aviso', legenda: a.quando ? `${a.titulo ?? ''} · ${dataHora(a.quando)}` : (a.titulo ?? '') }])} aria-label="Ver foto">
+                    <img src={dados.fotos[a.foto]} alt="" className="h-12 w-20 rounded-xl object-cover" />
+                  </button>
+                ) : (
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${a.tom === 'alerta' ? 'bg-amber-500' : a.tom === 'erro' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                )}
+                <span className="min-w-0 flex-1">{a.texto}</span>
               </li>
             ))}
           </ul>
