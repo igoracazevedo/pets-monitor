@@ -172,6 +172,18 @@ export default function Cameras({ admin }: { admin: boolean }) {
         <p className="vidro px-3 py-2 text-[12px] text-slate-600">Câmeras novas foram achadas na rede. Olhe a imagem e toque no lápis para dar o nome do local (Cozinha, Quarto…).</p>
       )}
       {ocultas > 0 && <p className="text-[12px] text-slate-500">{ocultas} câmera(s) desativada(s) — reative em Ajustes.</p>}
+      <section className="grid grid-cols-3 gap-3 text-center">
+        {[
+          { n: visiveis.length, rotulo: 'Ativas', cor: 'text-white' },
+          { n: online.length, rotulo: 'Online', cor: 'text-lime-300' },
+          { n: offline.length, rotulo: 'Sem sinal', cor: offline.length ? 'text-rose-300' : 'text-white/40' },
+        ].map((t) => (
+          <div key={t.rotulo} className="vidro px-2 py-3">
+            <p className={`text-2xl font-medium ${t.cor}`}>{t.n}</p>
+            <p className="text-[11px] text-white/55">{t.rotulo}</p>
+          </div>
+        ))}
+      </section>
       <div className="grid gap-4 sm:grid-cols-2">{online.map(cartao)}</div>
       {offline.length > 0 && (
         <details className="group">
