@@ -26,7 +26,19 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-select option { background: #161616; color: #fff; }
+select option, select optgroup { background-color: #161616; color: #fff; }
+/* combos: seta própria e fundo escuro (o padrão do navegador mostra partes brancas) */
+select {
+  color-scheme: dark;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: #1c1c1c;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2.2rem !important;
+}
+select:focus { background-color: #1c1c1c; }
 
 /* Brilho colorido no topo, que se apaga no preto */
 .aurora { position: absolute; inset: 0 0 auto 0; height: 460px; pointer-events: none; overflow: hidden; z-index: 0; }

@@ -32,7 +32,7 @@ export function Galeria({
   return (
     <div className="space-y-2">
       {janela}
-      <button type="button" onClick={() => setAberta((a) => !a)} className="flex w-full items-center justify-between rounded-xl bg-white/50 px-3 py-2 text-left text-[12px] font-semibold text-slate-700">
+      <button type="button" onClick={() => setAberta((a) => !a)} className="flex w-full items-center justify-between rounded-xl bg-white/[0.06] px-3 py-2 text-left text-[12px] font-semibold text-slate-700">
         <span>
           Fotos · {enviadas.length} enviada(s) · {encontradas.length >= 24 ? 'as 24 mais recentes encontradas' : `${encontradas.length} encontrada(s)`}
         </span>

@@ -125,7 +125,7 @@ export const Legenda = () => (
 
 function Tabela({ cab, linhas }: { cab: string; linhas: Balde[] }) {
   return (
-    <div className="max-h-56 overflow-auto rounded-xl bg-white/60">
+    <div className="max-h-56 overflow-auto rounded-2xl bg-white/[0.04]">
       <table className="w-full text-[12px]">
         <thead>
           <tr className="text-left" style={{ color: TINTA.suave }}>
