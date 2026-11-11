@@ -14,7 +14,7 @@ const PERIODOS: { id: Periodo; nome: string; ms: number }[] = [
   { id: '7d', nome: '7 dias', ms: 7 * 86400_000 },
   { id: '30d', nome: '30 dias', ms: 30 * 86400_000 },
 ]
-const TINTA = { forte: '#0b0b0b', suave: '#52514e', grade: '#e4e2dd', superficie: '#ffffff' }
+const TINTA = { forte: '#f5f5f5', suave: '#a3a3a3', grade: '#2a2a2a', superficie: '#161616' }
 
 const vazio = () => Object.fromEntries(SERIES.map((s) => [s.id, 0])) as Record<string, number>
 function baldes(ev: EventoBanheiro[], n: number, chave: (d: Date) => number, rotulo: (i: number) => string): Balde[] {
@@ -76,7 +76,7 @@ export function Colunas({ dados, passoRotulo, titulo }: { dados: Balde[]; passoR
         })}
       </svg>
       {d && sobre != null && (
-        <div className="pointer-events-none absolute -top-1 z-10 rounded-xl bg-white px-3 py-2 text-[12px] shadow-lg ring-1 ring-slate-200" style={{ left: `${Math.min(70, Math.max(0, ((ML + fatia * sobre) / W) * 100 - 8))}%` }}>
+        <div className="pointer-events-none absolute -top-1 z-10 rounded-2xl bg-[#1c1c1c] px-3 py-2 text-[12px] shadow-2xl shadow-black/60 ring-1 ring-white/10" style={{ left: `${Math.min(70, Math.max(0, ((ML + fatia * sobre) / W) * 100 - 8))}%` }}>
           <p className="font-semibold" style={{ color: TINTA.forte }}>{d.rotulo}</p>
           {SERIES.map((s) => (
             <p key={s.id} className="flex items-center gap-2" style={{ color: TINTA.suave }}>

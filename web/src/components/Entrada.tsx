@@ -15,13 +15,12 @@ function GoogleIcon() {
 /** Moldura das telas de entrada: faixa colorida com a logo e folha arredondada com o cartão (mesmo layout dos outros apps). */
 export function TelaEntrada({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-dvh flex-col bg-[#0e7490]">
-      <div className="flex flex-col items-center px-4 pb-10 pt-14 text-white">
-        <img src="/icon-192.png" width={72} height={72} alt="Pets Monitor" style={{ borderRadius: 72 * 0.22 }} />
-        <h1 className="mt-4 text-lg font-extrabold tracking-tight">Pets Monitor IAZ</h1>
-      </div>
-      <div className="folha flex-1 rounded-t-[26px] px-4 pt-6">
-        <div className="vidro mx-auto max-w-sm space-y-4 p-4 text-center">{children}</div>
+    <div className="relative grid min-h-dvh place-items-end overflow-hidden p-6 pb-16 sm:place-items-center">
+      <div className="aurora" />
+      <div className="relative z-10 w-full max-w-sm space-y-5">
+        <img src="/icon-192.png" width={64} height={64} alt="Pets Monitor" className="rounded-2xl" />
+        <h1 className="text-4xl font-medium tracking-tight">Pets Monitor</h1>
+        <div className="space-y-4">{children}</div>
       </div>
     </div>
   )
@@ -47,11 +46,11 @@ export function Entrar() {
 
   return (
     <TelaEntrada>
-      <p className="text-slate-600">Entre com sua conta Google para ver onde estão seus pets.</p>
-      <button onClick={() => void entrar()} disabled={ocupado} className="vidro flex w-full items-center justify-center gap-2 py-2.5 font-semibold text-slate-700 disabled:opacity-50" style={{ borderRadius: 14 }}>
+      <p className="text-white/60">Entre com sua conta Google para ver onde estão seus pets.</p>
+      <button onClick={() => void entrar()} disabled={ocupado} className="flex w-full items-center justify-center gap-2 rounded-full bg-lime-300 py-3.5 font-medium text-black hover:bg-lime-200 disabled:opacity-50">
         <GoogleIcon /> {ocupado ? 'Abrindo o Google…' : 'Entrar com Google'}
       </button>
-      {erro && <p className="text-[12px] font-medium text-rose-600">{erro}</p>}
+      {erro && <p className="text-[12px] font-medium text-rose-400">{erro}</p>}
     </TelaEntrada>
   )
 }
@@ -59,10 +58,10 @@ export function Entrar() {
 export function SemAcesso({ email }: { email?: string }) {
   return (
     <TelaEntrada>
-      <p className="text-slate-600">
+      <p className="text-white/60">
         {email ? <>O e-mail <strong>{email}</strong> não tem acesso.</> : 'Este e-mail não tem acesso.'} Peça ao administrador para liberar.
       </p>
-      <button onClick={() => void supabase.auth.signOut()} className="vidro w-full py-2.5 font-semibold text-slate-700" style={{ borderRadius: 14 }}>
+      <button onClick={() => void supabase.auth.signOut()} className="w-full rounded-full bg-white/10 py-3.5 font-medium text-white/90 hover:bg-white/15">
         Sair e usar outra conta
       </button>
     </TelaEntrada>
@@ -72,7 +71,7 @@ export function SemAcesso({ email }: { email?: string }) {
 export function Carregando({ texto = 'Carregando…' }: { texto?: string }) {
   return (
     <TelaEntrada>
-      <p className="text-slate-500">{texto}</p>
+      <p className="text-white/50">{texto}</p>
     </TelaEntrada>
   )
 }

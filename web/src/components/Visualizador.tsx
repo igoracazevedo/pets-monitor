@@ -227,7 +227,7 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
         <div className="space-y-2 bg-black/70 px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
           {pendente ? (
             <div className="flex items-center gap-2">
-              <select value={escolha} onChange={(e) => setEscolha(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-white px-2 py-2 text-slate-900">
+              <select value={escolha} onChange={(e) => setEscolha(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-[#1c1c1c] px-2 py-2 text-white">
                 <option value="">Quem é? / Qual local?</option>
                 {[...new Set(marcar.opcoes.map((o) => o.grupo ?? ''))].map((g) => {
                   const itensG = marcar.opcoes.filter((o) => (o.grupo ?? '') === g)
@@ -298,7 +298,7 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
           </button>
         )}
         {acao && (
-          <button disabled={acao.ocupado} onClick={acao.onClick} className="rounded-full bg-white px-3 py-2 text-[13px] font-bold text-[#0e7490] disabled:opacity-60 sm:px-4 sm:text-sm">
+          <button disabled={acao.ocupado} onClick={acao.onClick} className="rounded-full bg-lime-300 px-3 py-2 text-[13px] font-medium text-black disabled:opacity-60 sm:px-4 sm:text-sm">
             {acao.ocupado ? 'Batendo foto…' : acao.rotulo}
           </button>
         )}

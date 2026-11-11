@@ -6,18 +6,16 @@ import { supabase } from '../lib/supabase'
 
 export type AbaDef = { id: string; nome: string; Icone: LucideIcon; ajuda: string[] }
 
-const COR = '#0e7490'
-const COR_MENU = '#074b5e'
 const hora = new Date(__APP_COMPILACAO__).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 function Avatar({ sessao, grande }: { sessao: Session; grande?: boolean }) {
-  const tam = grande ? 'h-12 w-12' : 'h-9 w-9'
+  const tam = grande ? 'h-12 w-12' : 'h-12 w-12'
   const meta = (sessao.user.user_metadata ?? {}) as { avatar_url?: string; picture?: string; full_name?: string; name?: string }
   const url = meta.avatar_url ?? meta.picture
   const nome = meta.full_name ?? meta.name ?? sessao.user.email ?? 'U'
-  if (url) return <img src={url} alt="" referrerPolicy="no-referrer" className={`${tam} rounded-full border-2 border-white/20 object-cover`} />
+  if (url) return <img src={url} alt="" referrerPolicy="no-referrer" className={`${tam} rounded-full ring-2 ring-white/20 object-cover`} />
   const iniciais = nome.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('')
-  return <span className={`flex ${tam} items-center justify-center rounded-full border-2 border-white/20 bg-[#0b3a49] text-[12px] font-bold text-white`}>{iniciais}</span>
+  return <span className={`flex ${tam} items-center justify-center rounded-full ring-2 ring-white/20 bg-white/10 text-[14px] font-medium text-white`}>{iniciais}</span>
 }
 
 /** Moldura do app no padrão IAZ: topo colorido com avatar/menu, pílula central e ajuda; folha curvada com atalhos em squircles. */
@@ -37,20 +35,20 @@ export function Casca({ sessao, abas, abasTopo = [], aba, onAba, children }: { s
   useEffect(() => setMenu(false), [aba])
 
   return (
-    <div className="min-h-dvh">
-      <header className="pb-7 text-white" style={{ background: COR }}>
-        <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pt-3">
+    <div className="relative min-h-dvh overflow-x-hidden">
+      <div className="aurora" />
+      <div className="relative z-10 mx-auto max-w-5xl px-4 pb-32 pt-[max(env(safe-area-inset-top),16px)]">
+        <header className="flex items-center justify-between py-2">
           <div className="relative" ref={ref}>
-            <button onClick={() => setMenu((m) => !m)} className="flex items-center gap-2 rounded-full p-0.5 transition hover:bg-white/10" aria-label="Menu do usuário">
+            <button onClick={() => setMenu((m) => !m)} className="flex items-center gap-2 rounded-full" aria-label="Menu do usuário">
               <Avatar sessao={sessao} />
-              <span className="hidden rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold sm:inline">{nome.split(' ')[0]}</span>
             </button>
             {menu && (
-              <div className="absolute left-0 top-12 z-50 w-64 overflow-hidden rounded-2xl border border-white/10 text-white shadow-xl" style={{ background: COR_MENU }}>
+              <div className="absolute left-0 top-14 z-50 w-64 overflow-hidden rounded-3xl border border-white/10 bg-[#1c1c1c] text-white shadow-2xl shadow-black/60">
                 <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
                   <Avatar sessao={sessao} grande />
                   <div className="min-w-0">
-                    <p className="truncate font-bold">{nome}</p>
+                    <p className="truncate font-medium">{nome}</p>
                     <p className="truncate text-[12px] text-white/60">{sessao.user.email}</p>
                   </div>
                 </div>
@@ -65,74 +63,61 @@ export function Casca({ sessao, abas, abasTopo = [], aba, onAba, children }: { s
             )}
           </div>
 
-          <div className="flex min-w-0 flex-1 justify-center sm:pointer-events-none sm:absolute sm:inset-x-0 sm:top-1/2 sm:flex-none sm:-translate-y-1/2">
-            <div className="flex min-w-0 items-center gap-2 rounded-2xl bg-white px-2.5 py-1.5 shadow-sm">
-              <img src="/icon-192.png" alt="" className="h-6 w-6 shrink-0 rounded-lg" />
-              <span className="truncate text-sm font-extrabold tracking-tight" style={{ color: '#06323f' }}>Pets Monitor</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-2">
             {abasTopo.map(({ id, nome: rotulo, Icone }) => (
               <button
                 key={id}
                 onClick={() => onAba(id)}
                 aria-label={rotulo}
                 title={rotulo}
-                className={`rounded-full p-2 transition ${id === aba ? 'bg-white text-[#0e7490]' : 'hover:bg-white/10'}`}
+                className={`grid h-11 w-11 place-items-center rounded-full border border-white/10 transition-colors ${id === aba ? 'bg-lime-300 text-black' : 'bg-[#1c1c1c]/90 text-white/80 hover:text-white'}`}
               >
-                <Icone size={20} strokeWidth={1.9} />
+                <Icone size={20} strokeWidth={1.8} />
               </button>
             ))}
-            <button onClick={() => setAjuda(true)} aria-label="Ajuda" className="rounded-full p-2 transition hover:bg-white/10">
-              <HelpCircle size={20} strokeWidth={1.9} />
+            <button onClick={() => setAjuda(true)} aria-label="Ajuda" className="grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-[#1c1c1c]/90 text-white/80 transition-colors hover:text-white">
+              <HelpCircle size={20} strokeWidth={1.8} />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="folha -mt-4 min-h-[calc(100dvh-4rem)] rounded-t-[26px]">
-        <div className="mx-auto min-w-0 max-w-5xl px-4 pb-10 pt-5">
-          <nav className="mb-5 flex justify-center gap-1 sm:gap-2">
-            {abas.map(({ id, nome: rotulo, Icone }) => {
-              const ativa = id === aba
-              return (
-                <button key={id} onClick={() => onAba(id)} className="group flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:w-[68px] sm:flex-none">
-                  <span
-                    className={`flex h-11 w-11 items-center justify-center rounded-[16px] border transition duration-200 sm:h-[52px] sm:w-[52px] ${
-                      ativa ? 'scale-105 text-white ring-2 ring-offset-2' : 'border-slate-200/80 bg-white text-slate-600 shadow-sm group-hover:text-[#0e7490]'
-                    }`}
-                    style={ativa ? { background: COR, borderColor: COR, boxShadow: '0 6px 16px -4px rgba(14,116,144,.45)', ['--tw-ring-color' as string]: 'rgba(14,116,144,.25)', ['--tw-ring-offset-color' as string]: '#e8f0f6' } : undefined}
-                  >
-                    <Icone size={20} strokeWidth={1.9} />
-                  </span>
-                  <span className={`line-clamp-2 text-center text-[10px] leading-tight sm:text-[11px] ${ativa ? 'font-bold text-[#0e7490]' : 'text-slate-600'}`}>{rotulo}</span>
-                  <span className="h-1 w-5 rounded-full transition duration-200" style={{ background: ativa ? COR : 'transparent' }} />
-                </button>
-              )
-            })}
-          </nav>
-          {children}
+        <main className="min-w-0 pt-2">{children}</main>
+      </div>
+
+      {/* Barra inferior flutuante: abas em pílula */}
+      <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(env(safe-area-inset-bottom),14px)]">
+        <div className="pointer-events-auto mx-auto flex max-w-xl items-center rounded-full border border-white/10 bg-[#1c1c1c]/90 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl">
+          {abas.map(({ id, nome: rotulo, Icone }) => (
+            <button
+              key={id}
+              onClick={() => onAba(id)}
+              aria-label={rotulo}
+              title={rotulo}
+              className={`grid h-12 flex-1 place-items-center rounded-full transition-colors ${id === aba ? 'bg-black text-lime-300' : 'text-white/70 hover:text-white'}`}
+            >
+              <Icone className="h-[22px] w-[22px]" strokeWidth={1.8} />
+            </button>
+          ))}
         </div>
-      </main>
+      </nav>
 
       {ajuda && atual && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={() => setAjuda(false)}>
-          <div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#1c1c1c] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <HelpCircle size={18} strokeWidth={1.9} className="text-[#ffb800]" />
-                <h2 className="font-extrabold tracking-tight text-slate-900">Como usar esta tela · {atual.nome}</h2>
+                <HelpCircle size={18} strokeWidth={1.9} className="text-lime-300" />
+                <h2 className="font-medium tracking-tight text-white">Como usar esta tela · {atual.nome}</h2>
               </div>
-              <button onClick={() => setAjuda(false)} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Fechar">
+              <button onClick={() => setAjuda(false)} className="rounded-full p-1.5 text-white/60 hover:bg-white/10" aria-label="Fechar">
                 <X size={18} strokeWidth={1.9} />
               </button>
             </div>
             <ol className="space-y-2">
               {atual.ajuda.map((s, i) => (
                 <li key={i} className="flex gap-3">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0e7490]/10 text-[11px] font-bold text-[#0e7490]">{i + 1}</span>
-                  <span className="text-slate-700">{s}</span>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-lime-300/10 text-[11px] font-medium text-lime-300">{i + 1}</span>
+                  <span className="text-white/80">{s}</span>
                 </li>
               ))}
             </ol>

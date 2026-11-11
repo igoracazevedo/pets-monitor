@@ -13,7 +13,7 @@ export default function PetsEPessoas({ admin }: { admin: boolean }) {
           <button
             key={p}
             onClick={() => setParte(p)}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition ${parte === p ? 'bg-white text-[#0e7490] shadow-sm' : 'text-slate-500'}`}
+            className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition ${parte === p ? 'bg-white/90 text-black' : 'text-slate-500'}`}
           >
             {p === 'pets' ? 'Pets' : p === 'pessoas' ? 'Pessoas' : 'Objetos'}
           </button>

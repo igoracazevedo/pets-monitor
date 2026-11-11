@@ -77,13 +77,13 @@ export default function Log() {
           {!ultimaLinha ? 'Sem registros' : parado ? `Sem sinal há ${ha(ultimaLinha.created_at)}` : `Ativo · última linha há ${ha(ultimaLinha.created_at)}`}
         </span>
         <div className="ml-auto flex gap-2">
-          <button className={`rounded-full px-3 py-1 text-[12px] font-semibold ring-1 ${soErros ? 'bg-rose-600 text-white ring-rose-600' : 'bg-white text-slate-600 ring-slate-200'}`} onClick={() => setSoErros(!soErros)}>
+          <button className={`rounded-full px-3 py-1 text-[12px] font-semibold ring-1 ${soErros ? 'bg-rose-600 text-white ring-rose-600' : 'bg-white/[0.06] text-white/80 ring-white/10'}`} onClick={() => setSoErros(!soErros)}>
             Só erros
           </button>
-          <button className={`rounded-full px-3 py-1 text-[12px] font-semibold ring-1 ${pausado ? 'bg-amber-500 text-white ring-amber-500' : 'bg-white text-slate-600 ring-slate-200'}`} onClick={() => setPausado(!pausado)}>
+          <button className={`rounded-full px-3 py-1 text-[12px] font-semibold ring-1 ${pausado ? 'bg-amber-500 text-white ring-amber-500' : 'bg-white/[0.06] text-white/80 ring-white/10'}`} onClick={() => setPausado(!pausado)}>
             {pausado ? 'Retomar' : 'Pausar'}
           </button>
-          <button className="rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-slate-600 ring-1 ring-slate-200" onClick={() => void copiar()}>
+          <button className="rounded-full bg-white/[0.06] px-3 py-1 text-[12px] font-semibold text-white/80 ring-1 ring-white/10" onClick={() => void copiar()}>
             {copiado ? 'Copiado' : 'Copiar'}
           </button>
         </div>
@@ -93,7 +93,7 @@ export default function Log() {
         value={busca}
         onChange={(e) => setBusca(e.target.value)}
         placeholder="Filtrar (ex.: Banheiro, erro, Mavi)"
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#0e7490]"
+        className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[14px] outline-none focus:border-lime-300/60"
       />
 
       {erro && (
@@ -102,7 +102,7 @@ export default function Log() {
         </p>
       )}
 
-      <div ref={caixa} onScroll={aoRolar} className="h-[60vh] overflow-auto rounded-2xl bg-slate-900 p-3 font-mono text-[11.5px] leading-[1.45] text-slate-200">
+      <div ref={caixa} onScroll={aoRolar} className="h-[60vh] overflow-auto rounded-2xl bg-black p-3 font-mono text-[11.5px] leading-[1.45] text-white/80">
         {visiveis.length === 0 && !erro && (
           <p className="text-slate-400">{linhas.length === 0 ? 'Nenhuma linha ainda. Abra o iniciar.bat (versão atualizada) e aguarde alguns segundos.' : 'Nada com esse filtro.'}</p>
         )}
