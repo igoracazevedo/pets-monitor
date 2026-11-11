@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Camera as CamIcon, Check, Pencil } from 'lucide-react'
+import { Camera as CamIcon, Check, ChevronRight, Pencil } from 'lucide-react'
 import { supabase, urlsDasFotos, type Camera, type Pet, type Zona } from '../lib/supabase'
 import { marcarLocal } from '../lib/objetos'
 import { locaisDaCamera, opcoesDeLocais } from '../lib/zonas'
@@ -90,7 +90,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   }
 
   if (carregando) return <p className="p-6 text-center text-slate-500">Carregando…</p>
-  if (erro) return <p className="p-6 text-center text-rose-600">{erro}</p>
+  if (erro) return <p className="p-6 text-center text-rose-400">{erro}</p>
   const visiveis = dados.cams.filter((c) => c.ativo)
   const ocultas = dados.cams.length - visiveis.length
   const urlDe = (c: Camera) => {
@@ -102,29 +102,11 @@ export default function Cameras({ admin }: { admin: boolean }) {
     return url ? [{ id: c.id, url, extra: c, locais: locaisDaCamera(dados.pets, dados.zonas, c.id), titulo: c.nome, legenda: c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : undefined }] : []
   })
   if (dados.cams.length === 0) return <p className="vidro p-6 text-center text-slate-500">As câmeras aparecem aqui assim que o programa de casa rodar a primeira varredura.</p>
-  return (
-    <div className="space-y-3">
-      {ver != null && itens[ver] && (
-        <Visualizador
-          itens={itens}
-          indice={ver}
-          onIndice={setVer}
-          onFechar={() => setVer(null)}
-          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome, grupo: 'Quem é' })), ...opcoesDeLocais(dados.pets)], onMarcar: marcarNaCamera, onApagarLocal: async (id) => { await supabase.from('pm_zonas').delete().eq('id', id); await recarregar() } } : undefined}
-          acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
-        />
-      )}
-      <button className="botao-principal w-full sm:w-auto" disabled={buscando} onClick={() => void pedirFotos()}>
-        <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
-      </button>
-      {msg && <p className="text-sm text-rose-600">{msg}</p>}
-      {admin && visiveis.some((c) => c.nome.startsWith('Câmera ')) && (
-        <p className="vidro px-3 py-2 text-[12px] text-slate-600">Câmeras novas foram achadas na rede. Olhe a imagem e toque no lápis para dar o nome do local (Cozinha, Quarto…).</p>
-      )}
-      {ocultas > 0 && <p className="text-[12px] text-slate-500">{ocultas} câmera(s) desativada(s) — reative em Ajustes.</p>}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {visiveis.map((c) => {
-          const fora = c.ultimo_status === 'erro' || minutosDesde(c.ultima_leitura) > 5
+  const estaFora = (c: Camera) => c.ultimo_status === 'erro' || minutosDesde(c.ultima_leitura) > 5
+  const online = visiveis.filter((c) => !estaFora(c))
+  const offline = visiveis.filter(estaFora)
+  const cartao = (c: Camera) => {
+          const fora = estaFora(c)
           const img = urlDe(c)
           return (
             <article key={c.id} className={`vidro overflow-hidden ${c.ativo ? '' : 'opacity-60'}`}>
@@ -141,7 +123,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
                       <button className="pilula" aria-label="Salvar nome"><Check size={16} /></button>
                     </form>
                   ) : (
-                    <h2 className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <h2 className="flex items-center gap-1.5 font-medium text-white">
                       <span className="truncate">{c.nome}</span>
                       {admin && (
                         <button type="button" aria-label="Renomear câmera" className="shrink-0 text-slate-400" onClick={() => { setEditando(c.id); setApelido(c.nome.startsWith('Câmera ') ? '' : c.nome) }}>
@@ -154,9 +136,9 @@ export default function Cameras({ admin }: { admin: boolean }) {
                   <p className="text-[12px] text-slate-500">
                     {c.foto_em ? `Foto de ${horaCompleta(c.foto_em)} (${haQuanto(c.foto_em)})` : 'Sem foto ainda'}
                   </p>
-                  {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-600">{c.ultimo_erro}</p>}
+                  {c.ultimo_erro && fora && <p className="truncate text-[11px] text-rose-400">{c.ultimo_erro}</p>}
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${fora ? 'bg-rose-500/15 text-rose-300' : 'bg-lime-300/10 text-lime-300'}`}>{fora ? 'Sem sinal' : 'Online'}</span>
               </div>
               <div className="flex gap-2 px-3 pb-3">
                 <button className="pilula flex-1 justify-center !py-2 text-[13px]" disabled={!img} onClick={() => setVer(Math.max(0, itens.findIndex((x) => x.id === c.id)))}>
@@ -168,8 +150,38 @@ export default function Cameras({ admin }: { admin: boolean }) {
               </div>
             </article>
           )
-        })}
-      </div>
+  }
+
+  return (
+    <div className="space-y-3">
+      {ver != null && itens[ver] && (
+        <Visualizador
+          itens={itens}
+          indice={ver}
+          onIndice={setVer}
+          onFechar={() => setVer(null)}
+          marcar={admin ? { opcoes: [...dados.pets.map((p) => ({ valor: `pet:${p.id}`, nome: p.nome, grupo: 'Quem é' })), ...dados.gente.map((g) => ({ valor: `pessoa:${g.id}`, nome: g.nome, grupo: 'Quem é' })), ...opcoesDeLocais(dados.pets)], onMarcar: marcarNaCamera, onApagarLocal: async (id) => { await supabase.from('pm_zonas').delete().eq('id', id); await recarregar() } } : undefined}
+          acao={{ rotulo: 'Bater foto agora', ocupado: batendo === itens[ver].id, onClick: () => void pedirFotos(itens[ver].id) }}
+        />
+      )}
+      <button className="botao-principal w-full sm:w-auto" disabled={buscando} onClick={() => void pedirFotos()}>
+        <CamIcon size={16} className={buscando ? 'animate-pulse' : ''} /> {buscando ? 'Tirando fotos…' : 'Ver ao vivo'}
+      </button>
+      {msg && <p className="text-sm text-rose-400">{msg}</p>}
+      {admin && visiveis.some((c) => c.nome.startsWith('Câmera ')) && (
+        <p className="vidro px-3 py-2 text-[12px] text-slate-600">Câmeras novas foram achadas na rede. Olhe a imagem e toque no lápis para dar o nome do local (Cozinha, Quarto…).</p>
+      )}
+      {ocultas > 0 && <p className="text-[12px] text-slate-500">{ocultas} câmera(s) desativada(s) — reative em Ajustes.</p>}
+      <div className="grid gap-4 sm:grid-cols-2">{online.map(cartao)}</div>
+      {offline.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/85 hover:bg-white/10 [&::-webkit-details-marker]:hidden">
+            <ChevronRight size={16} className="transition-transform group-open:rotate-90" />
+            Sem sinal <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] font-medium text-rose-300">{offline.length}</span>
+          </summary>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">{offline.map(cartao)}</div>
+        </details>
+      )}
     </div>
   )
 }
