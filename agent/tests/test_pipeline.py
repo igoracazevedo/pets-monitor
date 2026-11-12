@@ -665,11 +665,13 @@ def test_buffer_e_segunda_leitura():
         v.catalogo = None; v.buffer = Buffer(Path(d) / "b2")
         v.eventos_recentes = []; v.eventos_carga = 0.0
         v.rev_ultima, v.rev_caixa, v.rev_prev, v.rev_vistos, v.rev_banheiro = {}, {}, {}, {}, {}
-        v.analisar = lambda frame, cid, aprender=False: ([Deteccao("dog", 0.9, (20, 40, 60, 80))], [Pal()])  # cachorra em cima da vasilha
+        # imagem escura (< 128) = cachorra em cima da vasilha; clara = foi embora
+        v.analisar = lambda frame, cid, aprender=False: (([Deteccao("dog", 0.9, (20, 40, 60, 80))], [Pal()]) if frame.mean() < 128 else ([], []))
         ts = agora - 7200  # 2 h atrás
         v.buffer.salvar("cam1", np.full((100, 100, 3), 10, np.uint8), ts)
-        v.buffer.salvar("cam1", np.full((100, 100, 3), 200, np.uint8), ts + 60)       # outra cena: lida também, mas o 2º bebeu é o mesmo evento
-        assert v.revisar(10) == 2 and not v.buffer.pendentes(10)
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 20, np.uint8), ts + 30)        # ainda bebendo: a mesma visita
+        v.buffer.salvar("cam1", np.full((100, 100, 3), 200, np.uint8), ts + 60)       # foi embora depois de pouco tempo: bebeu
+        assert v.revisar(10) == 3 and not v.buffer.pendentes(10)
         assert [e["tipo"] for e in v.db.ev] == ["agua"] and v.db.ev[0]["pet_id"] == "p1"
         quando = datetime.fromisoformat(v.db.ev[0]["visto_em"]).timestamp()
         assert abs(quando - ts) < 2, "o evento leva a hora da imagem, não a hora da leitura"
@@ -681,12 +683,64 @@ def test_buffer_e_segunda_leitura():
         v.eventos_carga = T.time()
         v.revisar(10)
         assert not v.db.ev
+        # deitada ao lado da vasilha por 5 min: não é beber
+        for i, cor in enumerate((30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 230)):
+            v.buffer.salvar("cam1", np.full((100, 100, 3), cor, np.uint8), ts + 7200 + 30 * i)
+        v.revisar(20)
+        assert not v.db.ev, "ficou muito tempo na vasilha: deitada, não bebendo"
     print("imagens guardadas 12 h e segunda leitura: registra o que faltou, na hora certa, sem repetir: ok")
 
 
 from datetime import datetime
 
 test_buffer_e_segunda_leitura()
+
+
+def test_banheiro_por_visita():
+    """Xixi/cocô só depois de um bicho pisar no tapete: compara o tapete antes e depois da visita."""
+    from pets_agent.visita_tapete import VigiaTapete, comparar
+
+    rec = (0.5, 0.2, 0.4, 0.6)
+
+    def cena(amarelo=False, coco=False, luz=1.0):
+        img = np.full((240, 320, 3), (150, 160, 170), np.uint8)     # piso
+        cv2.rectangle(img, (160, 48), (288, 192), (235, 238, 240), -1)  # tapete branco
+        cv2.line(img, (224, 48), (224, 192), (210, 214, 216), 2)       # vinco do tapete (textura para o encaixe)
+        if amarelo:
+            cv2.circle(img, (200, 120), 22, (120, 200, 215), -1)       # mancha amarelada
+        if coco:
+            for x, y in ((250, 80), (258, 86), (247, 92)):
+                cv2.circle(img, (x, y), 3, (20, 35, 60), -1)           # pedacinhos escuros
+        return np.clip(img.astype(np.float32) * luz, 0, 255).astype(np.uint8)
+
+    assert comparar(cena(), cena(amarelo=True), rec).tipos == ["xixi"]
+    assert comparar(cena(), cena(coco=True), rec).tipos == ["coco"]
+    assert comparar(cena(amarelo=True), cena(amarelo=True, luz=0.85), rec).tipos == [], "só a luz mudou"
+    assert comparar(cena(amarelo=True), cena(), rec).tipos == [], "mancha que sumiu não é xixi"
+
+    dog = ((0.6, 0.3, 0.8, 0.6), "p1")
+    g = VigiaTapete()
+    assert g.alimentar(cena(), 0, rec, [], []) == []                         # tapete livre: referência
+    assert g.alimentar(cena(), 30, rec, [dog], []) == []                     # Mavi em cima
+    assert g.alimentar(cena(amarelo=True), 60, rec, [], []) == []            # saiu (1ª imagem livre)
+    ev = g.alimentar(cena(amarelo=True), 90, rec, [], [])                    # 2ª imagem livre: fecha a visita
+    assert [(e["tipo"], e["pet_id"], e["ts"]) for e in ev] == [("xixi", "p1", 30)]
+    # bicho só passou: nada novo
+    g.alimentar(cena(amarelo=True), 120, rec, [dog], [])
+    g.alimentar(cena(amarelo=True), 150, rec, [], [])
+    assert g.alimentar(cena(amarelo=True), 180, rec, [], []) == []
+    # a luz mudou com o tapete livre: sem visita, nunca vira evento
+    assert g.alimentar(cena(amarelo=True, luz=0.8), 210, rec, [], []) == []
+    # pessoa trocou o tapete: limpo
+    g.alimentar(cena(amarelo=True), 240, rec, [], [(0.55, 0.1, 0.95, 0.9)])
+    g.alimentar(cena(), 270, rec, [], [])
+    assert [e["tipo"] for e in g.alimentar(cena(), 300, rec, [], [])] == ["limpo"]
+    # cachorro longe do tapete não abre visita
+    assert g.alimentar(cena(coco=True), 330, rec, [((0.0, 0.0, 0.2, 0.2), "p1")], []) == []
+    print("banheiro por visita: xixi/cocô só depois de pisar no tapete, luz e manchas antigas não contam, pessoa limpa: ok")
+
+
+test_banheiro_por_visita()
 
 
 def test_contorno_livre():

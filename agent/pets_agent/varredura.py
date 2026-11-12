@@ -136,6 +136,9 @@ class Varredura:
         self.rev_vistos: dict[str, dict[str, float]] = {}
         self.rev_banheiro: dict[str, dict] = {}
         self.aviso_tapete: dict[str, float] = {}
+        # eventos por VISITA (segunda leitura, imagens em ordem): tapete do banheiro e vasilhas de água/comida
+        self.vigia_tapete: dict[str, "VigiaTapete"] = {}
+        self.na_tigela: dict[str, dict] = {}
         self.ultimos_objetos = 0.0
 
     def _nome_pet(self, pid):
@@ -359,7 +362,9 @@ class Varredura:
                 self.buffer.salvar(cid, frame, revisado=True)  # já analisada agora: a segunda leitura pula esta
             except Exception as e:
                 print(f"  buffer: {e}", flush=True)
-        if self._vigia_eventos(cid, nome):
+        # Com as imagens guardadas, água/comida/banheiro saem só da segunda leitura, que vê as imagens em ordem a cada 30 s
+        # e decide pela VISITA inteira; uma imagem solta a cada 5 min não diz se o bicho bebeu, deitou ao lado ou só passou.
+        if self._vigia_eventos(cid, nome) and not self.buffer:
             try:
                 self.vigiar_agua(cid, nome, frame, achados)
                 self.vigiar_comida(cid, nome, frame, achados)
@@ -493,7 +498,9 @@ class Varredura:
         h, w = frame.shape[:2]
         retro = quando is not None
         t = quando if retro else time.time()
-        ultima, caixas = (self.rev_ultima, self.rev_caixa) if retro else (self.ultima_agua, self.caixa_agua)
+        if retro:
+            return self._tigela_por_visita(tipo, cid, nome, frame, achados, lista, t)
+        ultima, caixas = (self.ultima_agua, self.caixa_agua)
         for d, p in achados:
             if d.especie == "pessoa":
                 continue
@@ -510,23 +517,61 @@ class Varredura:
             caixas[chave] = (t, d.caixa)
             if self._ja_registrado(tipo, p.pet_id, t, intervalo):
                 continue  # a varredura normal, a segunda leitura ou você já registraram este
-            pet = next((x for x in self.pets if x["id"] == p.pet_id), None) if p.pet_id else None
-            dt = datetime.fromtimestamp(t)
-            foto = f"avistamentos/{dt:%Y/%m/%d}/{tipo}-{cid[:8]}-{dt:%H%M%S}.jpg"
-            self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(d.caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
-            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(t, timezone.utc).isoformat()})
-            self._lembrar(tipo, pet["id"] if pet else None, t)
-            frase = "bebeu água" if tipo == "agua" else "comendo"
-            print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}{' (achado na segunda leitura, ' + format(dt, '%H:%M') + ')' if retro else ''}", flush=True)
-            if self.notificador and self.notificador.ativo and time.time() - t < 3600:  # todo evento recente vai para o celular
-                if tipo == "agua":
-                    titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
-                else:
-                    titulo = f"{pet['nome']} comendo" if pet else "Uma das cachorras comendo"
-                try:
-                    self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto), f"{tipo}-{int(t)}")
-                except Exception as e:
-                    print(f"  aviso: {e}", flush=True)
+            self._gravar_tigela(tipo, cid, nome, frame, d.caixa, p.pet_id, t, retro)
+
+    # tempo máximo na vasilha para contar como bebeu/comeu: deitado ao lado fica bem mais que isso
+    TIGELA_MAX_S = {"agua": 150, "comeu": 420}
+    TIGELA_INTERVALO_S = {"agua": 600, "comeu": 900}
+
+    def _tigela_por_visita(self, tipo: str, cid: str, nome: str, frame, achados, lista, t: float):
+        """Segunda leitura (imagens em ordem, a cada ~30 s): abre uma 'visita' quando o bicho aparece na vasilha e só registra
+        quando ele vai embora, se ficou pouco tempo. Muito tempo parado na vasilha = deitado/dormindo ao lado, não conta."""
+        h, w = frame.shape[:2]
+        na_tigela = self.__dict__.setdefault("na_tigela", {})
+        vistos = set()
+        for d, p in achados:
+            if d.especie == "pessoa":
+                continue
+            caixa = (d.caixa[0] / w, d.caixa[1] / h, d.caixa[2] / w, d.caixa[3] / h)
+            if not any(cobertura(z, caixa) >= 0.35 for z in lista):
+                continue
+            chave = f"{tipo}:{cid}:{p.pet_id or '?'}"
+            vistos.add(chave)
+            st = na_tigela.get(chave)
+            if st is None or t - st["ultimo"] > 120:
+                na_tigela[chave] = {"inicio": t, "ultimo": t, "frame": frame, "caixa": d.caixa, "pet": p.pet_id, "cid": cid, "tipo": tipo}
+            else:
+                st["ultimo"] = t
+        for chave, st in list(na_tigela.items()):
+            if st["cid"] != cid or st["tipo"] != tipo or chave in vistos:
+                continue
+            del na_tigela[chave]  # foi embora da vasilha: decide agora
+            dur = t - st["inicio"]
+            if dur > self.TIGELA_MAX_S[tipo]:
+                print(f"  {nome}: {self._nome_pet(st['pet']) or 'bicho'} ficou {int(dur // 60)} min na vasilha ({tipo}): deitado ao lado, não conta", flush=True)
+                continue
+            if self._ja_registrado(tipo, st["pet"], st["inicio"], self.TIGELA_INTERVALO_S[tipo]):
+                continue
+            self._gravar_tigela(tipo, cid, nome, st["frame"], st["caixa"], st["pet"], st["inicio"], True)
+
+    def _gravar_tigela(self, tipo: str, cid: str, nome: str, frame, caixa, pet_id, t: float, retro: bool):
+        pet = next((x for x in self.pets if x["id"] == pet_id), None) if pet_id else None
+        dt = datetime.fromtimestamp(t)
+        foto = f"avistamentos/{dt:%Y/%m/%d}/{tipo}-{cid[:8]}-{dt:%H%M%S}.jpg"
+        self.db.enviar_foto(foto, _jpeg(_anotar(self.proteger(frame, cid), [(caixa, pet["nome"] if pet else "?")]), self.cfg["largura_foto"]))
+        self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(t, timezone.utc).isoformat()})
+        self._lembrar(tipo, pet["id"] if pet else None, t)
+        frase = "bebeu água" if tipo == "agua" else "comendo"
+        print(f"  {nome}: {pet['nome'] if pet else 'um bicho'} {frase}{' (achado na segunda leitura, ' + format(dt, '%H:%M') + ')' if retro else ''}", flush=True)
+        if self.notificador and self.notificador.ativo and time.time() - t < 3600:  # todo evento recente vai para o celular
+            if tipo == "agua":
+                titulo = f"{pet['nome']} bebeu água" if pet else "Uma das cachorras bebeu água"
+            else:
+                titulo = f"{pet['nome']} comendo" if pet else "Uma das cachorras comendo"
+            try:
+                self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto), f"{tipo}-{int(t)}")
+            except Exception as e:
+                print(f"  aviso: {e}", flush=True)
 
     def recorte_banheiro(self, cid: str):
         """Região do banheiro marcada nas fotos (x, y, largura, altura de 0 a 1), ou None para olhar a imagem toda."""
@@ -651,11 +696,12 @@ class Varredura:
         if not reg or reg.get("ativo") is False:
             return
         nome = reg["nome"]
+        banheiro = self._eh_banheiro(cid, nome)
         mini = cv2.cvtColor(cv2.resize(frame, (64, 36)), cv2.COLOR_BGR2GRAY).astype(np.int16)
         ant = self.rev_prev.get(cid)
         self.rev_prev[cid] = mini
-        if ant is not None and float(np.abs(mini - ant).mean()) < 1.5:
-            return  # cena parada desde a imagem anterior: nada novo para ver
+        if ant is not None and float(np.abs(mini - ant).mean()) < 1.5 and not banheiro:
+            return  # cena parada desde a imagem anterior: nada novo para ver (o banheiro precisa de toda imagem para fechar a visita)
         dets, palpites = self.analisar(frame, cid, aprender=False)
         achados = list(zip(dets, palpites))
         for d, p in achados:
@@ -664,10 +710,77 @@ class Varredura:
         self._catalogar(cid, frame, dets, ts)
         if not self._vigia_eventos(cid, nome):
             return
+        achados = self._sem_gente(achados, frame.shape)
         self.vigiar_agua(cid, nome, frame, achados, quando=ts)
         self.vigiar_comida(cid, nome, frame, achados, quando=ts)
-        if self._eh_banheiro(cid, nome):
-            self._rever_banheiro(cid, nome, frame, dets, ts)
+        if banheiro:
+            self._visita_banheiro(cid, nome, frame, achados, ts)
+
+    @staticmethod
+    def _sem_gente(achados, shape):
+        """Tira 'bichos' que são na verdade uma pessoa (criança deitada no chão já virou 'Mavi bebeu água')."""
+        gente = [d.caixa for d, _ in achados if d.especie == "pessoa"]
+        if not gente:
+            return achados
+        saida = []
+        for d, p in achados:
+            if d.especie != "pessoa":
+                x1, y1, x2, y2 = d.caixa
+                area = max(1, (x2 - x1) * (y2 - y1))
+                dentro = max((max(0, min(x2, g[2]) - max(x1, g[0])) * max(0, min(y2, g[3]) - max(y1, g[1])) / area for g in gente), default=0)
+                if dentro > 0.6:
+                    continue
+            saida.append((d, p))
+        return saida
+
+    def _visita_banheiro(self, cid: str, nome: str, frame, achados, ts: float):
+        """Xixi/cocô por visita: compara o tapete logo antes e logo depois de um bicho pisar nele (ver visita_tapete.py)."""
+        from .visita_tapete import VigiaTapete
+
+        recorte = self.recorte_banheiro(cid)
+        if not recorte:
+            avisos = self.__dict__.setdefault("aviso_tapete", {})
+            if time.time() - avisos.get(cid, 0) > 6 * 3600:
+                avisos[cid] = time.time()
+                print(f"  {nome}: marque a área do tapete (local 'banheiro') na foto da câmera para eu vigiar xixi e cocô", flush=True)
+            return
+        h, w = frame.shape[:2]
+        rel = lambda c: (c[0] / w, c[1] / h, c[2] / w, c[3] / h)
+        bichos = [(rel(d.caixa), p.pet_id) for d, p in achados if d.especie != "pessoa"]
+        pessoas = [rel(d.caixa) for d, _ in achados if d.especie == "pessoa"]
+        vigia = self.__dict__.setdefault("vigia_tapete", {}).setdefault(cid, VigiaTapete())
+        eventos = vigia.alimentar(frame, ts, recorte, bichos, pessoas)
+        for ev in eventos:
+            self._registrar_visita(cid, nome, ev, frame)
+
+    def _registrar_visita(self, cid: str, nome: str, ev: dict, depois):
+        tipo, t = ev["tipo"], ev["ts"]
+        pid = ev.get("pet_id")
+        if self._ja_registrado(tipo, pid, t, 1800 if tipo != "limpo" else 600):
+            return
+        pet = next((x for x in self.pets if x["id"] == pid), None) if pid else None
+        dt = datetime.fromtimestamp(t)
+        foto = None
+        if tipo != "limpo":
+            # foto lado a lado: o bicho no tapete (quem foi) e o tapete logo depois (o que ficou)
+            quadros = [q for q in (ev.get("frame_visita"), depois) if q is not None]
+            alt = min(q.shape[0] for q in quadros)
+            lado = np.hstack([cv2.resize(self.proteger(q, cid), (int(q.shape[1] * alt / q.shape[0]), alt)) for q in quadros])
+            foto = f"avistamentos/{dt:%Y/%m/%d}/banheiro-{cid[:8]}-{dt:%H%M%S}.jpg"
+            self.db.enviar_foto(foto, _jpeg(lado, self.cfg["largura_foto"] * len(quadros)))
+        self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(t, timezone.utc).isoformat()})
+        self._lembrar(tipo, pet["id"] if pet else None, t)
+        print(f"  {nome}: {tipo}{' (' + pet['nome'] + ')' if pet else ''} às {dt:%H:%M} (visita ao tapete; {ev.get('medidas')})", flush=True)
+        if self.notificador and self.notificador.ativo and time.time() - t < 3600:
+            try:
+                if tipo == "limpo":
+                    titulo = "Tapete limpo"
+                else:
+                    algo = "xixi" if tipo == "xixi" else "cocô"
+                    titulo = f"{pet['nome']} fez {algo}" if pet else f"Uma das cachorras fez {algo}"
+                self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto) if foto else None, f"banheiro-{tipo}-{int(t)}")
+            except Exception as e:
+                print(f"  aviso: {e}", flush=True)
 
     def _rever_banheiro(self, cid: str, nome: str, frame, dets, ts: float):
         """Tapete na segunda leitura: o estado novo só vale depois de aparecer em 2 imagens seguidas (evita falso alarme)."""
