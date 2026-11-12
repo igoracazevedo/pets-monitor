@@ -39,7 +39,11 @@ def carregar_cameras(arquivo: str | Path) -> list[dict]:
             url = c.get("rtsp", "")
             if not url:
                 continue
-            if usuario and "@" not in url:  # coloca o login na URL (codificado)
+            if usuario and "@" not in url and c.get("auth", "").lower() == "basic":
+                # câmera que recusa o login Digest (Mercusys): passa por um intermediário local que entra com Basic
+                from .rtsp_basic import url_para
+                url = url_para(url, usuario, senha)
+            elif usuario and "@" not in url:  # coloca o login na URL (codificado)
                 url = url.replace("rtsp://", f"rtsp://{quote(usuario, safe='')}:{quote(senha, safe='')}@", 1)
             # câmera que "trava se reconectar a cada foto": mantém a conexão aberta
             # continuo=nao: conecta só na hora da foto (NVR aguenta; poupa o processador do PC)
