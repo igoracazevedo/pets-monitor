@@ -1,0 +1,18 @@
+[
+  {
+    "versao": "0.3.4",
+    "data": "2026-11-11",
+    "itens": [
+      "Quando sair uma versão nova, o app avisa em tela cheia, mostra o que mudou e tem o botão Atualizar aplicativo."
+    ]
+  },
+  {
+    "versao": "0.3.3",
+    "data": "2026-11-11",
+    "itens": [
+      "Novo visual escuro, igual ao do Pets Saúde.",
+      "Câmeras offline ficam em seção recolhida e as online aparecem abertas, com o total de câmeras ativas no topo.",
+      "Combos e gráfico de eventos por dia corrigidos no tema escuro."
+    ]
+  }
+]

@@ -1,3 +1,4 @@
 {
-  "rewrites": [{ "source": "/((?!assets/|icon|manifest).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!assets/|icon|manifest|version\\.json|sw\\.js).*)", "destination": "/index.html" }],
+  "headers": [{ "source": "/version.json", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }]
 }
