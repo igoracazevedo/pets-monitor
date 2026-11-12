@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 
 export type Local = { id?: string; caixa: Caixa; rotulo: string; cor: string }
@@ -84,8 +85,17 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
   }, [item == null])
 
   if (!item) return null
-  return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black/95 text-white" onClick={onFechar} role="dialog" aria-modal="true">
+  // Vai direto no <body>: dentro da página ficaria na camada do conteúdo (z-10), abaixo da barra de abas flutuante
+  // (z-20), que cobria as fichas dos itens marcados e os botões do rodapé. As margens env(safe-area-inset-*) afastam
+  // o topo do entalhe e o rodapé da barra de gestos do celular.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[80] flex flex-col bg-black text-white"
+      style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      onClick={onFechar}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="flex items-center justify-between gap-3 px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="min-w-0">
           {item.titulo && <p className="truncate font-bold">{item.titulo}</p>}
@@ -303,7 +313,8 @@ export function Visualizador({ itens, indice, onIndice, onFechar, acao, marcar }
           </button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

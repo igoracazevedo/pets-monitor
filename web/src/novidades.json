@@ -1,5 +1,12 @@
 [
   {
+    "versao": "0.3.5",
+    "data": "2026-11-12",
+    "itens": [
+      "Na foto em tela cheia, a barra de abas não cobre mais as marcações numeradas nem os botões do rodapé (Locais, Marcar quem é, Bater foto agora)."
+    ]
+  },
+  {
     "versao": "0.3.4",
     "data": "2026-11-11",
     "itens": [
