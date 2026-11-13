@@ -41,12 +41,12 @@ export type Avistamento = {
 }
 
 /**
- * Links assinados com cache: o mesmo caminho devolve o MESMO link enquanto valer. Antes cada recarga (a cada 15 s)
- * gerava um link novo, o navegador achava que era outra imagem e baixava tudo de novo (era o grosso do tráfego do Supabase).
- * Fotos com nome único ficam 6 h; o quadro ao vivo da câmera (cameras/…) é sobrescrito, então renova a cada 90 s.
+ * Links das fotos. Fotos de nome único saem do Cloudflare R2 (sem cobrança de tráfego; o 1º acesso copia do Supabase);
+ * se o R2 falhar, ou para o quadro ao vivo da câmera (que é sobrescrito), usa o link assinado do Supabase.
+ * O mesmo caminho devolve o MESMO link enquanto valer, então o navegador reaproveita a imagem.
  */
 const memoria = new Map<string, { url: string; ate: number }>()
-const ehQuadroAoVivo = (c: string) => c.startsWith('cameras/')
+const ehQuadroAoVivo = (c: string) => c.startsWith('cameras/') || c.startsWith('ao-vivo/')
 
 function lerCache(chave: string): string | null {
   const m = memoria.get(chave)
@@ -63,6 +63,17 @@ function lerCache(chave: string): string | null {
   return null
 }
 
+function guardar(chave: string, url: string, ms: number, persistir: boolean) {
+  const reg = { url, ate: Date.now() + ms }
+  memoria.set(chave, reg)
+  if (!persistir) return
+  try {
+    localStorage.setItem(`pm-url:${chave}`, JSON.stringify(reg))
+  } catch {
+    /* cheio ou indisponível */
+  }
+}
+
 async function assinar(bucket: string, caminhos: (string | null | undefined)[]): Promise<Record<string, string>> {
   const unicos = [...new Set(caminhos.filter((c): c is string => !!c))]
   const out: Record<string, string> = {}
@@ -73,18 +84,38 @@ async function assinar(bucket: string, caminhos: (string | null | undefined)[]):
     else faltam.push(c)
   }
   if (faltam.length === 0) return out
-  const { data } = await supabase.storage.from(bucket).createSignedUrls(faltam, 8 * 3600)
-  for (const d of data ?? []) {
-    if (!d.path || !d.signedUrl) continue
-    out[d.path] = d.signedUrl
-    const reg = { url: d.signedUrl, ate: Date.now() + (ehQuadroAoVivo(d.path) ? 90_000 : 6 * 3600_000) }
-    memoria.set(`${bucket}/${d.path}`, reg)
-    if (!ehQuadroAoVivo(d.path)) {
-      try {
-        localStorage.setItem(`pm-url:${bucket}/${d.path}`, JSON.stringify(reg))
-      } catch {
-        /* cheio ou indisponível */
+
+  // 1) R2 (só arquivos de nome único)
+  const paraR2 = faltam.filter((c) => !ehQuadroAoVivo(c))
+  if (paraR2.length) {
+    try {
+      const { data: s } = await supabase.auth.getSession()
+      const r = await fetch('/api/foto-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token ?? ''}` },
+        body: JSON.stringify({ bucket, caminhos: paraR2 }),
+      })
+      if (r.ok) {
+        const { urls } = (await r.json()) as { urls: Record<string, string | null> }
+        for (const [p, u] of Object.entries(urls)) {
+          if (!u) continue
+          out[p] = u
+          guardar(`${bucket}/${p}`, u, 6 * 3600_000, true)
+        }
       }
+    } catch {
+      /* sem R2: cai no Supabase */
+    }
+  }
+
+  // 2) Supabase (quadro ao vivo, ou o que o R2 não entregou)
+  const restam = faltam.filter((c) => !out[c])
+  if (restam.length) {
+    const { data } = await supabase.storage.from(bucket).createSignedUrls(restam, 3600)
+    for (const d of data ?? []) {
+      if (!d.path || !d.signedUrl) continue
+      out[d.path] = d.signedUrl
+      guardar(`${bucket}/${d.path}`, d.signedUrl, ehQuadroAoVivo(d.path) ? 90_000 : 45 * 60_000, !ehQuadroAoVivo(d.path))
     }
   }
   return out

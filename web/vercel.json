@@ -1,4 +1,24 @@
 {
-  "rewrites": [{ "source": "/((?!assets/|icon|manifest|version\\.json|sw\\.js).*)", "destination": "/index.html" }],
-  "headers": [{ "source": "/version.json", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }]
+  "rewrites": [
+    {
+      "source": "/((?!api/|assets/|icon|manifest|version\\.json|sw\\.js).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/foto-url.js": {
+      "maxDuration": 30
+    }
+  }
 }

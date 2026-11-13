@@ -1,5 +1,12 @@
 [
   {
+    "versao": "0.4.0",
+    "data": "2026-11-13",
+    "itens": [
+      "As fotos passam a ser entregues pelo Cloudflare R2, que não gasta a cota de internet do Supabase. Cada foto é copiada para lá na primeira vez que aparece; o quadro ao vivo das câmeras e qualquer falha continuam pelo Supabase."
+    ]
+  },
+  {
     "versao": "0.3.7",
     "data": "2026-11-13",
     "itens": [
