@@ -63,7 +63,7 @@ export default function Pets({ admin }: { admin: boolean }) {
       for (const arq of arquivos) {
         const jpeg = await reduzirImagem(arq)
         const path = `${petId}/${crypto.randomUUID()}.jpg`
-        const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg' })
+        const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg', cacheControl: '31536000' })
         if (up.error) throw up.error
         const ins = await supabase.from('pm_pet_fotos').insert({ pet_id: petId, path })
         if (ins.error) throw ins.error
@@ -82,7 +82,7 @@ export default function Pets({ admin }: { admin: boolean }) {
     setMsg('')
     try {
       const path = `${p.id}/perfil-${crypto.randomUUID()}.jpg`
-      const up = await supabase.storage.from('pm-fotos-pets').upload(path, await recortarQuadrado(arq), { contentType: 'image/jpeg' })
+      const up = await supabase.storage.from('pm-fotos-pets').upload(path, await recortarQuadrado(arq), { contentType: 'image/jpeg', cacheControl: '31536000' })
       if (up.error) throw up.error
       const { error } = await supabase.from('pm_pets').update({ foto_perfil_path: path }).eq('id', p.id)
       if (error) throw error

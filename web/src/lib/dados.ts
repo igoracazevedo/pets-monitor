@@ -18,8 +18,18 @@ export function useDados<T>(carregar: () => Promise<T>, inicial: T, cada = 15000
   }, [])
   useEffect(() => {
     void recarregar()
-    const t = setInterval(() => void recarregar(), cada)
-    return () => clearInterval(t)
+    // aba escondida/tela apagada não precisa atualizar: poupa tráfego (volta a atualizar ao reabrir)
+    const t = setInterval(() => {
+      if (!document.hidden) void recarregar()
+    }, cada)
+    const aoVoltar = () => {
+      if (!document.hidden) void recarregar()
+    }
+    document.addEventListener('visibilitychange', aoVoltar)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', aoVoltar)
+    }
   }, [recarregar, cada])
   return { dados, erro, carregando, recarregar }
 }

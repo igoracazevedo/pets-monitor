@@ -55,7 +55,7 @@ export default function Pessoas({ admin }: { admin: boolean }) {
       for (const arq of arquivos) {
         const jpeg = await reduzirImagem(arq, 1600)
         const path = `pessoas/${id}/${crypto.randomUUID()}.jpg`
-        const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg' })
+        const up = await supabase.storage.from('pm-fotos-pets').upload(path, jpeg, { contentType: 'image/jpeg', cacheControl: '31536000' })
         if (up.error) throw up.error
         const ins = await supabase.from('pm_pessoa_fotos').insert({ pessoa_id: id, path })
         if (ins.error) throw ins.error

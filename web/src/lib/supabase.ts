@@ -40,15 +40,58 @@ export type Avistamento = {
   h: number | null
 }
 
-/** Links assinados (as fotos ficam num bucket privado). */
-export async function urlsDasFotos(caminhos: (string | null | undefined)[]): Promise<Record<string, string>> {
+/**
+ * Links assinados com cache: o mesmo caminho devolve o MESMO link enquanto valer. Antes cada recarga (a cada 15 s)
+ * gerava um link novo, o navegador achava que era outra imagem e baixava tudo de novo (era o grosso do tráfego do Supabase).
+ * Fotos com nome único ficam 6 h; o quadro ao vivo da câmera (cameras/…) é sobrescrito, então renova a cada 90 s.
+ */
+const memoria = new Map<string, { url: string; ate: number }>()
+const ehQuadroAoVivo = (c: string) => c.startsWith('cameras/')
+
+function lerCache(chave: string): string | null {
+  const m = memoria.get(chave)
+  if (m && m.ate > Date.now()) return m.url
+  try {
+    const r = JSON.parse(localStorage.getItem(`pm-url:${chave}`) ?? 'null') as { url: string; ate: number } | null
+    if (r && r.ate > Date.now()) {
+      memoria.set(chave, r)
+      return r.url
+    }
+  } catch {
+    /* sem localStorage */
+  }
+  return null
+}
+
+async function assinar(bucket: string, caminhos: (string | null | undefined)[]): Promise<Record<string, string>> {
   const unicos = [...new Set(caminhos.filter((c): c is string => !!c))]
-  if (unicos.length === 0) return {}
-  const { data } = await supabase.storage.from('pm-snapshots').createSignedUrls(unicos, 3600)
   const out: Record<string, string> = {}
-  for (const d of data ?? []) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
+  const faltam: string[] = []
+  for (const c of unicos) {
+    const u = lerCache(`${bucket}/${c}`)
+    if (u) out[c] = u
+    else faltam.push(c)
+  }
+  if (faltam.length === 0) return out
+  const { data } = await supabase.storage.from(bucket).createSignedUrls(faltam, 8 * 3600)
+  for (const d of data ?? []) {
+    if (!d.path || !d.signedUrl) continue
+    out[d.path] = d.signedUrl
+    const reg = { url: d.signedUrl, ate: Date.now() + (ehQuadroAoVivo(d.path) ? 90_000 : 6 * 3600_000) }
+    memoria.set(`${bucket}/${d.path}`, reg)
+    if (!ehQuadroAoVivo(d.path)) {
+      try {
+        localStorage.setItem(`pm-url:${bucket}/${d.path}`, JSON.stringify(reg))
+      } catch {
+        /* cheio ou indisponível */
+      }
+    }
+  }
   return out
 }
+
+/** Links assinados (as fotos ficam num bucket privado). */
+export const urlsDasFotos = (caminhos: (string | null | undefined)[]) => assinar('pm-snapshots', caminhos)
 
 const ehHeic = (a: File) => /hei[cf]/i.test(a.type) || /\.hei[cf]$/i.test(a.name)
 
@@ -107,14 +150,7 @@ export async function recortarQuadrado(arquivo: File, lado = 512): Promise<Blob>
 }
 
 /** Links assinados do bucket de fotos de pets. */
-export async function urlsDosPets(caminhos: (string | null | undefined)[]): Promise<Record<string, string>> {
-  const unicos = [...new Set(caminhos.filter((c): c is string => !!c))]
-  if (!unicos.length) return {}
-  const { data } = await supabase.storage.from('pm-fotos-pets').createSignedUrls(unicos, 3600)
-  const out: Record<string, string> = {}
-  for (const d of data ?? []) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
-  return out
-}
+export const urlsDosPets = (caminhos: (string | null | undefined)[]) => assinar('pm-fotos-pets', caminhos)
 
 type Caixa = { x: number | null; y: number | null; w: number | null; h: number | null }
 

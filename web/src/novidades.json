@@ -1,5 +1,12 @@
 [
   {
+    "versao": "0.3.7",
+    "data": "2026-11-13",
+    "itens": [
+      "Gasta bem menos internet: as fotos deixam de ser baixadas de novo a cada atualização da tela, e a tela não atualiza sozinha enquanto o app está escondido."
+    ]
+  },
+  {
     "versao": "0.3.6",
     "data": "2026-11-13",
     "itens": [
