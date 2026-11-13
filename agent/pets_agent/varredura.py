@@ -14,6 +14,7 @@ from .identify import Identificador, Palpite, caracteristica
 from .privacidade import desfocar_pessoas
 from .noturno import MemoriaTamanhos, area_relativa, eh_noturno, por_tamanho
 from .catalogo import cobertura
+from .banheiro import ROTULOS as ROTULOS_BANHEIRO, nome_do_rotulo, tipos_do_rotulo
 from .store import Supabase, agora
 
 
@@ -624,11 +625,12 @@ class Varredura:
                 pet = next((x for x in self.pets if x["id"] == pid), None)
         foto = f"avistamentos/{datetime.now():%Y/%m/%d}/banheiro-{cid[:8]}-{datetime.now():%H%M%S}.jpg"
         self.db.enviar_foto(foto, _jpeg(self.proteger(frame, cid), self.cfg["largura_foto"]))
-        self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
-        self._lembrar(rot, pet["id"] if pet else None, time.time())
+        for tipo in tipos_do_rotulo(rot):  # "xixi_coco" = dois eventos, um de cada
+            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": agora()})
+            self._lembrar(tipo, pet["id"] if pet else None, time.time())
         print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''}", flush=True)
         if self.notificador and self.notificador.ativo:  # sempre avisa: xixi/cocô novo no banheiro
-            algo = "xixi" if rot == "xixi" else "cocô"
+            algo = nome_do_rotulo(rot)
             titulo = f"{pet['nome']} fez {algo}" if pet else f"As cachorras fizeram {algo}"
             try:
                 self.notificador.enviar(titulo, f"Visto no {nome} às {datetime.now():%H:%M}", self.db.url_assinada(foto), f"banheiro-{int(time.time())}")
@@ -810,7 +812,8 @@ class Varredura:
         vistos = [(t0, p) for p, t0 in self.rev_vistos.get(cid, {}).items() if 0 <= ts - t0 < 900]
         if vistos and rot != "limpo":
             pid = max(vistos)[1]
-        if self._ja_registrado(rot, pid, ts, 1800):
+        tipos = [t for t in tipos_do_rotulo(rot) if not self._ja_registrado(t, pid, ts, 1800)]
+        if not tipos:
             return
         pet = next((x for x in self.pets if x["id"] == pid), None) if pid else None
         dt = datetime.fromtimestamp(ts)
@@ -818,35 +821,40 @@ class Varredura:
         if rot != "limpo":
             foto = f"avistamentos/{dt:%Y/%m/%d}/banheiro-{cid[:8]}-{dt:%H%M%S}.jpg"
             self.db.enviar_foto(foto, _jpeg(self.proteger(frame, cid), self.cfg["largura_foto"]))
-        self.db.evento_banheiro({"camera_id": cid, "tipo": rot, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(ts, timezone.utc).isoformat()})
-        self._lembrar(rot, pet["id"] if pet else None, ts)
+        for tipo in tipos:  # "xixi_coco" = dois eventos, um de cada
+            self.db.evento_banheiro({"camera_id": cid, "tipo": tipo, "pet_id": pet["id"] if pet else None, "snapshot_path": foto, "visto_em": datetime.fromtimestamp(ts, timezone.utc).isoformat()})
+            self._lembrar(tipo, pet["id"] if pet else None, ts)
         print(f"  {nome}: {rot}{' (' + pet['nome'] + ')' if pet else ''} (achado na segunda leitura, {dt:%H:%M})", flush=True)
         if self.notificador and self.notificador.ativo and time.time() - ts < 3600:
             try:
                 if rot == "limpo":
                     titulo = "Tapete limpo"
                 else:
-                    algo = "xixi" if rot == "xixi" else "cocô"
+                    algo = nome_do_rotulo("xixi_coco" if len(tipos) == 2 else tipos[0])
                     titulo = f"{pet['nome']} fez {algo}" if pet else f"As cachorras fizeram {algo}"
                 self.notificador.enviar(titulo, f"Visto no {nome} às {dt:%H:%M}", self.db.url_assinada(foto) if foto else None, f"banheiro-{int(ts)}")
             except Exception as e:
                 print(f"  aviso: {e}", flush=True)
 
     def ensinar_banheiro(self, camera_id: str, rotulo: str) -> str:
-        """Pedido do app ("coco no Banheiro"): a foto de agora vira exemplo de limpo/xixi/coco."""
+        """Pedido do app ("coco no Banheiro", "xixi e coco no Banheiro"): a foto de agora vira exemplo de limpo/xixi/coco/xixi_coco."""
+        if rotulo not in ROTULOS_BANHEIRO:
+            return f"rótulo desconhecido: {rotulo}"
         alvo = next(((c, reg) for c, reg in self.cameras if reg["id"] == camera_id), None)
         if not alvo:
             return "câmera não encontrada"
         cfg_cam, reg = alvo
         frame = capture.capturar(cfg_cam)
         caminho = self.banheiro.ensinar(camera_id, rotulo, self.proteger(frame, camera_id), lambda f: _jpeg(f, self.cfg["largura_foto"]))
-        self.db.evento_banheiro({"camera_id": camera_id, "tipo": rotulo, "snapshot_path": caminho, "visto_em": agora()})  # o estado atual do tapete aparece nos avisos
+        for tipo in tipos_do_rotulo(rotulo):  # o estado atual do tapete aparece nos avisos; "xixi_coco" registra os dois
+            self.db.evento_banheiro({"camera_id": camera_id, "tipo": tipo, "snapshot_path": caminho, "visto_em": agora()})
         self.estado_banheiro[camera_id] = rotulo  # o que já está lá não conta como evento novo
         self.banheiro.carregar(camera_id, self.recorte_banheiro(camera_id))  # recarrega os exemplos para contar e já usar
         linhas = self.db.banheiro_amostras(camera_id)  # conta o que está guardado, mesmo antes de ter o "limpo" para comparar
-        n = {r: sum(1 for l in linhas if l["rotulo"] == r) for r in ("limpo", "xixi", "coco")}
+        n = {r: sum(1 for l in linhas if l["rotulo"] == r) for r in ROTULOS_BANHEIRO}
         falta = " Falta ensinar 'limpo' (tapete limpo) para eu poder comparar." if n["limpo"] == 0 else ""
-        return f"Aprendi '{rotulo}' em {reg['nome']}. Exemplos: {n['limpo']} limpo, {n['xixi']} xixi, {n['coco']} coco.{falta}"
+        juntos = f", {n['xixi_coco']} xixi e coco" if n["xixi_coco"] else ""
+        return f"Aprendi '{nome_do_rotulo(rotulo)}' em {reg['nome']}. Exemplos: {n['limpo']} limpo, {n['xixi']} xixi, {n['coco']} coco{juntos}.{falta}"
 
     def identificar(self, pet_id: str, camera_id: str) -> str:
         """Pedido por texto no site ("Mavi na Sala"): tira a foto de agora, marca o pet no animal achado e aprende com ela."""

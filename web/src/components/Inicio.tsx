@@ -82,14 +82,20 @@ function montarAvisos(d: Dados, cam: (id: string | null) => Camera | undefined):
 
 const NEGACAO = /\b(nao|sem|nenhum|nenhuma|nada|nem|nunca)\b/
 
-/** "coco no Banheiro" ensina coco; "não tem coco" / "sem xixi" é negação e ensina "limpo" (senão a IA aprenderia o contrário do que foi escrito). */
-function rotuloDoTexto(t: string): { rotulo?: 'xixi' | 'coco' | 'limpo'; negou?: string; duvida?: boolean } {
+type RotuloBanheiro = 'xixi' | 'coco' | 'limpo' | 'xixi_coco'
+const NOME_ROTULO: Record<RotuloBanheiro, string> = { xixi: 'xixi', coco: 'cocô', limpo: 'limpo', xixi_coco: 'xixi e cocô' }
+
+/** "coco no Banheiro" ensina coco; "xixi e coco no Banheiro" ensina os dois juntos (vira dois eventos);
+ *  "não tem coco" / "sem xixi" é negação e ensina "limpo" (senão a IA aprenderia o contrário do que foi escrito). */
+function rotuloDoTexto(t: string): { rotulo?: RotuloBanheiro; negou?: string; duvida?: boolean } {
   const achados = (['xixi', 'coco', 'limpo'] as const).flatMap((r) => {
     const m = new RegExp(`\\b${r}\\b`).exec(t)
     if (!m) return []
     const antes = t.slice(0, m.index).split(/[,;.]| mas | so | apenas /).pop() ?? ''
     return [{ r, negado: NEGACAO.test(antes) }]
   })
+  const positivos = achados.filter((a) => !a.negado).map((a) => a.r)
+  if (positivos.includes('xixi') && positivos.includes('coco')) return { rotulo: 'xixi_coco' }
   const positivo = achados.find((a) => !a.negado)
   if (positivo) return { rotulo: positivo.r }
   const sujeira = achados.filter((a) => a.negado && a.r !== 'limpo')
@@ -244,17 +250,17 @@ export default function Inicio({ admin, onIr }: { admin: boolean; onIr?: (aba: s
     }
     const { rotulo, negou, duvida } = rotuloDoTexto(t)
     if (duvida) {
-      setResposta('Entendi que o tapete não está limpo. Está com xixi ou com coco? Escreva, por exemplo: "coco no Banheiro".')
+      setResposta('Entendi que o tapete não está limpo. Está com xixi, com coco ou com os dois? Escreva, por exemplo: "coco no Banheiro" ou "xixi e coco no Banheiro".')
       return
     }
     if (rotulo) {
       const bs = dados.cams.filter((c) => sem(c.nome).includes('banheiro'))
       const cam = [...dados.cams].sort((a, b) => b.nome.length - a.nome.length).find((c) => t.includes(sem(c.nome))) ?? (bs.length === 1 ? bs[0] : undefined)
       if (!cam) {
-        setResposta(`Qual câmera? Escreva, por exemplo: "${rotulo} no ${bs[0]?.nome ?? 'Banheiro'}".`)
+        setResposta(`Qual câmera? Escreva, por exemplo: "${NOME_ROTULO[rotulo]} no ${bs[0]?.nome ?? 'Banheiro'}".`)
         return
       }
-      await pedir({ tipo: 'ensinar_banheiro', camera_id: cam.id, rotulo }, negou ? `Entendi que não tem ${negou}: ensinando "limpo" na câmera ${cam.nome}…` : `Ensinando "${rotulo}" na câmera ${cam.nome}…`)
+      await pedir({ tipo: 'ensinar_banheiro', camera_id: cam.id, rotulo }, negou ? `Entendi que não tem ${negou}: ensinando "limpo" na câmera ${cam.nome}…` : `Ensinando "${NOME_ROTULO[rotulo]}" na câmera ${cam.nome}…`)
       return
     }
     const pet = [...dados.pets].sort((a, b) => b.nome.length - a.nome.length).find((p) => t.includes(sem(p.nome)))

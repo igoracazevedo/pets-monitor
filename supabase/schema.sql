@@ -278,6 +278,9 @@ create table if not exists public.pm_banheiro_eventos (
   snapshot_path text,
   visto_em timestamptz not null default now()
 );
+-- "xixi e coco no Banheiro": exemplo com os dois ao mesmo tempo (vira dois eventos, um de cada)
+alter table public.pm_banheiro_amostras drop constraint if exists pm_banheiro_amostras_rotulo_check;
+alter table public.pm_banheiro_amostras add constraint pm_banheiro_amostras_rotulo_check check (rotulo in ('limpo', 'xixi', 'coco', 'xixi_coco'));
 alter table public.pm_banheiro_eventos drop constraint if exists pm_banheiro_eventos_tipo_check;
 alter table public.pm_banheiro_eventos add constraint pm_banheiro_eventos_tipo_check check (tipo in ('xixi', 'coco', 'limpo', 'agua', 'comeu'));
 create index if not exists pm_banheiro_eventos_idx on public.pm_banheiro_eventos (visto_em desc);

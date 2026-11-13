@@ -3,7 +3,16 @@ Aprende com os exemplos que você manda pelo app ("limpo no Banheiro", "xixi no 
 import cv2
 import numpy as np
 
-ROTULOS = ("limpo", "xixi", "coco")
+ROTULOS = ("limpo", "xixi", "coco", "xixi_coco")  # xixi_coco = os dois ao mesmo tempo ("xixi e coco no Banheiro")
+
+
+def tipos_do_rotulo(rotulo: str) -> list[str]:
+    """Eventos que um rótulo gera: 'xixi_coco' vira um de xixi e um de coco (os gráficos contam cada um)."""
+    return ["xixi", "coco"] if rotulo == "xixi_coco" else [rotulo]
+
+
+def nome_do_rotulo(rotulo: str) -> str:
+    return {"xixi_coco": "xixi e cocô", "coco": "cocô"}.get(rotulo, rotulo)
 MAX_POR_ROTULO = 12
 DIST_MAX = 0.9  # mais longe que isso de qualquer exemplo = "não sei" (luz mudou, câmera mexeu...)
 
@@ -91,7 +100,7 @@ class Banheiro:
 
     def pronto(self, cid: str) -> bool:
         c = self.cache.get(cid)
-        return bool(c and c["base"] is not None and any(r in ("xixi", "coco") for r, _ in c["exemplos"]))
+        return bool(c and c["base"] is not None and any(r in ("xixi", "coco", "xixi_coco") for r, _ in c["exemplos"]))
 
     def classificar(self, cid: str, frame: np.ndarray, recorte=None):
         """-> (rotulo, distância) ou None quando ainda não há exemplos suficientes. 'desconhecido' = nada parecido com o que já vi."""

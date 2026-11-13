@@ -552,7 +552,13 @@ def test_mensagem_do_ensino():
     assert "1 limpo" in m1 and "Falta" not in m1, m1
     m2 = v.ensinar_banheiro("cam12345", "xixi")
     assert "1 limpo, 1 xixi" in m2, m2
-    print("mensagem do ensino conta os exemplos guardados: ok")
+    antes = len(v.db.ev)
+    m3 = v.ensinar_banheiro("cam12345", "xixi_coco")
+    assert "xixi e cocô" in m3 and "1 xixi e coco" in m3, m3
+    assert [e["tipo"] for e in v.db.ev[antes:]] == ["xixi", "coco"], v.db.ev[antes:]  # os dois ao mesmo tempo = dois eventos
+    assert v.db.l[-1][0] == "xixi_coco"
+    assert "desconhecido" in v.ensinar_banheiro("cam12345", "lama")
+    print("mensagem do ensino conta os exemplos guardados (inclusive xixi e cocô juntos): ok")
 
 
 test_mensagem_do_ensino()
