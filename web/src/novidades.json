@@ -1,5 +1,12 @@
 [
   {
+    "versao": "0.4.2",
+    "data": "2026-11-15",
+    "itens": [
+      "Menu flutuante com fundo de vidro claro e ícones na cor do topo do app, mais fácil de ler."
+    ]
+  },
+  {
     "versao": "0.4.1",
     "data": "2026-11-15",
     "itens": [

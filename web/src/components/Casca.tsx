@@ -86,14 +86,14 @@ export function Casca({ sessao, abas, abasTopo = [], aba, onAba, children }: { s
 
       {/* Barra inferior flutuante: abas em pílula */}
       <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(env(safe-area-inset-bottom),14px)]">
-        <div className="pointer-events-auto mx-auto flex max-w-xl items-center rounded-full border border-white/10 bg-[#1c1c1c]/90 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl">
+        <div className="pointer-events-auto mx-auto flex max-w-xl items-center rounded-full p-1.5 nav-flutuante">
           {abas.map(({ id, nome: rotulo, Icone }) => (
             <button
               key={id}
               onClick={() => onAba(id)}
               aria-label={rotulo}
               title={rotulo}
-              className={`grid h-12 flex-1 place-items-center rounded-full transition-colors ${id === aba ? 'bg-black text-lime-300' : 'text-white/70 hover:text-white'}`}
+              className={`grid h-12 flex-1 place-items-center rounded-full transition-colors ${id === aba ? 'nav-ativa' : 'nav-item'}`}
             >
               <Icone className="h-[22px] w-[22px]" strokeWidth={1.8} />
             </button>
