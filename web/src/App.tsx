@@ -9,7 +9,9 @@ import Cameras from './components/Cameras'
 import Ajustes from './components/Ajustes'
 import PetsEPessoas from './components/PetsEPessoas'
 import Log from './components/Log'
-import { Carregando, Entrar, SemAcesso } from './components/Entrada'
+import { Entrar, SemAcesso } from './components/Entrada'
+import { TelaAbertura, useAbertura } from './components/TelaAbertura'
+import { usePrimeiraCarga } from './lib/dados'
 import { Casca, type AbaDef } from './components/Casca'
 import { registrarServiceWorker } from './lib/push'
 
@@ -47,12 +49,14 @@ export default function App() {
     void Promise.all([supabase.rpc('pm_is_membro'), supabase.rpc('pm_is_admin')]).then(([m, a]) => setAcesso({ membro: m.data === true, admin: a.data === true }))
   }, [sessao])
 
-  if (sessao === undefined) return <Carregando />
+  if (sessao === undefined) return <TelaAbertura texto="Entrando" />
   if (!sessao) return <Entrar />
-  if (!acesso) return <Carregando texto="Verificando acesso…" />
+  if (!acesso) return <TelaAbertura texto="Verificando acesso" />
   if (!acesso.membro) return <SemAcesso email={sessao.user.email} />
 
   return (
+    <>
+    <AberturaAteCarregar />
     <Casca sessao={sessao} abas={abas} abasTopo={acesso.admin ? abasTopo : abasTopo.filter((a) => a.id !== 'log')} aba={aba} onAba={(id) => setAba(id as Aba)}>
       {aba === 'inicio' && <Inicio admin={acesso.admin} onIr={(a) => setAba(a as Aba)} />}
       {aba === 'historico' && <Historico admin={acesso.admin} />}
@@ -62,5 +66,12 @@ export default function App() {
       {aba === 'log' && acesso.admin && <Log />}
       {aba === 'ajustes' && <Ajustes admin={acesso.admin} email={sessao.user.email ?? ''} />}
     </Casca>
+    </>
   )
+}
+
+/** Abertura sobre o app até a 1ª carga de dados da tela terminar */
+function AberturaAteCarregar() {
+  const { visivel, saindo } = useAbertura(usePrimeiraCarga())
+  return visivel ? <TelaAbertura saindo={saindo} /> : null
 }
