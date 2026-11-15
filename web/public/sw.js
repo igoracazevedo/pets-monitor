@@ -13,7 +13,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(d.title || 'Pets Monitor', {
       body: d.body || '',
       icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      badge: '/badge-96.png',
       image: d.image || undefined,
       tag: d.tag || undefined,
       renotify: !!d.tag,
