@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { SeletorCor } from './SeletorCor'
 import { corPadraoPet, corValida } from '../lib/cores'
 import { Dog, ImagePlus, Plus, Trash2 } from 'lucide-react'
-import { recortarQuadrado, reduzirImagem, supabase, urlsDasFotos, urlsDosPets, type Pet, type PetFoto } from '../lib/supabase'
+import { recortarQuadrado, reduzirImagem, supabase, urlsDasFotos, urlsDosPets, type Pet, type PetFoto, COLUNAS_PET } from '../lib/supabase'
 import { Galeria } from './Galeria'
 import { useDados } from '../lib/dados'
 
@@ -11,7 +11,7 @@ type Dados = { pets: Pet[]; fotos: PetFoto[]; urls: Record<string, string>; acha
 
 async function carregar(): Promise<Dados> {
   const [p, f, c] = await Promise.all([
-    supabase.from('pm_pets').select('*').order('nome'),
+    supabase.from('pm_pets').select(COLUNAS_PET).order('nome'),
     supabase.from('pm_pet_fotos').select('*').order('created_at'),
     supabase.from('pm_cameras').select('id,nome'),
   ])

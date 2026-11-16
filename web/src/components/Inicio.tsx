@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Cat, Dog, RefreshCw, Users } from 'lucide-react'
-import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type EventoBanheiro, type Pet, type Posicao, type Presenca } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, urlsDosPets, type Camera, type EventoBanheiro, type Pet, type Posicao, type Presenca, COLUNAS_PET } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { useVisualizador } from './Visualizador'
 import { dataHora, haQuanto, minutosDesde } from '../lib/util'
@@ -19,7 +19,7 @@ function fotosDosAvisos(ev: EventoBanheiro[], cams: Camera[]): (string | null)[]
 
 async function carregar(): Promise<Dados> {
   const [pets, pos, cams, desc, presenca, banheiro] = await Promise.all([
-    supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'),
+    supabase.from('pm_pets').select(COLUNAS_PET).eq('ativo', true).order('nome'),
     supabase.from('pm_ultima_posicao').select('*'),
     supabase.from('pm_cameras').select('*'),
     supabase

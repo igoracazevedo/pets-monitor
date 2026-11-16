@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera, type ObjetoCatalogo, type Pet } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type ObjetoCatalogo, type Pet, COLUNAS_PET } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { haQuanto } from '../lib/util'
 import { useVisualizador } from './Visualizador'
@@ -11,7 +11,7 @@ const NOME: Record<string, string> = { bebedouro: 'Bebedouro', comedouro: 'Comed
 async function carregar(): Promise<Dados> {
   const [o, p, c] = await Promise.all([
     supabase.from('pm_objetos').select('*').order('created_at'),
-    supabase.from('pm_pets').select('*').order('nome'),
+    supabase.from('pm_pets').select(COLUNAS_PET).order('nome'),
     supabase.from('pm_cameras').select('id,nome'),
   ])
   const objetos = (o.data ?? []) as ObjetoCatalogo[]

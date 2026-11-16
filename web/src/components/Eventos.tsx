@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { supabase, urlsDasFotos, type Camera, type EventoBanheiro, type Pet } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type EventoBanheiro, type Pet, COLUNAS_PET } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { dataHora } from '../lib/util'
 import { ensinado, SERIES, textoEvento } from '../lib/eventos'
@@ -157,7 +157,7 @@ export default function Eventos({ admin }: { admin: boolean }) {
     async () => {
       const [ev, pets, cams] = await Promise.all([
         supabase.from('pm_banheiro_eventos').select('*').gte('visto_em', new Date(Date.now() - 30 * 86400_000).toISOString()).order('visto_em', { ascending: false }).limit(2000),
-        supabase.from('pm_pets').select('*').order('nome'),
+        supabase.from('pm_pets').select(COLUNAS_PET).order('nome'),
         supabase.from('pm_cameras').select('*'),
       ])
       if (ev.error) throw new Error(ev.error.message)

@@ -1,5 +1,13 @@
 [
   {
+    "versao": "0.5.1",
+    "data": "2026-11-16",
+    "itens": [
+      "Menos consumo de internet: o app não baixa mais os dados de reconhecimento dos pets a cada atualização.",
+      "Programa de casa: consulta os pedidos do app a cada 10 segundos quando ninguém está usando (fica rápido de novo assim que você pede algo)."
+    ]
+  },
+  {
     "versao": "0.5.0",
     "data": "2026-11-15",
     "itens": [

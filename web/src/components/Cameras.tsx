@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Camera as CamIcon, Check, ChevronRight, Pencil } from 'lucide-react'
-import { supabase, urlsDasFotos, type Camera, type Pet, type Zona } from '../lib/supabase'
+import { supabase, urlsDasFotos, type Camera, type Pet, type Zona, COLUNAS_PET } from '../lib/supabase'
 import { marcarLocal } from '../lib/objetos'
 import { locaisDaCamera, opcoesDeLocais } from '../lib/zonas'
 import { useDados } from '../lib/dados'
@@ -18,7 +18,7 @@ export default function Cameras({ admin }: { admin: boolean }) {
   const [ver, setVer] = useState<number | null>(null)
   const { dados, erro, carregando, recarregar } = useDados<{ cams: Camera[]; fotos: Record<string, string>; pets: Pet[]; gente: { id: string; nome: string }[]; zonas: Zona[] }>(
     async () => {
-      const [{ data, error }, pets, gente, zonas] = await Promise.all([supabase.from('pm_cameras').select('*').order('ordem').order('nome'), supabase.from('pm_pets').select('*').eq('ativo', true).order('nome'), supabase.from('pm_pessoas').select('id,nome').order('nome'), supabase.from('pm_zonas').select('*')])
+      const [{ data, error }, pets, gente, zonas] = await Promise.all([supabase.from('pm_cameras').select('*').order('ordem').order('nome'), supabase.from('pm_pets').select(COLUNAS_PET).eq('ativo', true).order('nome'), supabase.from('pm_pessoas').select('id,nome').order('nome'), supabase.from('pm_zonas').select('*')])
       if (error) throw new Error(error.message)
       const cams = (data ?? []) as Camera[]
       return { cams, fotos: await urlsDasFotos(cams.map((c) => c.ultimo_quadro_path)), pets: (pets.data ?? []) as Pet[], gente: (gente.data ?? []) as { id: string; nome: string }[], zonas: (zonas.data ?? []) as Zona[] }

@@ -6,6 +6,9 @@ const chave = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WjgE2b2i
 export const supabase = createClient(url, chave)
 
 export type Pet = { id: string; nome: string; especie: string; porte: string | null; descricao: string | null; perfil: unknown; ativo: boolean; precisa_reaprender: boolean; foto_perfil_path: string | null; notificar: boolean; cor?: string | null }
+// Sem o perfil de reconhecimento (dezenas de KB por pet, só o programa de casa usa).
+// "perfil" vem só como a versão: basta para saber se o reconhecimento está pronto.
+export const COLUNAS_PET = 'id,nome,especie,porte,descricao,ativo,precisa_reaprender,foto_perfil_path,notificar,cor,perfil:perfil->versao'
 export type PetFoto = { id: string; pet_id: string; path: string }
 export type Camera = {
   id: string

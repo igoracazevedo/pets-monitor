@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { supabase, type Camera, type Pet } from '../lib/supabase'
+import { supabase, type Camera, type Pet, COLUNAS_PET } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { ativarAvisos, avisosAtivos, desativarAvisos, suportaAvisos } from '../lib/push'
 
@@ -30,7 +30,7 @@ export default function Ajustes({ admin, email: meuEmail }: { admin: boolean; em
   const { dados, recarregar } = useDados<{ pets: Pet[]; cams: Camera[]; membros: Membro[] }>(
     async () => {
       const [p, c, m] = await Promise.all([
-        supabase.from('pm_pets').select('*').order('nome'),
+        supabase.from('pm_pets').select(COLUNAS_PET).order('nome'),
         supabase.from('pm_cameras').select('*').order('ordem').order('nome'),
         supabase.from('pm_membros').select('*').order('email'),
       ])

@@ -727,6 +727,10 @@ def cmd_varrer(args):
     ultima_varredura = 0.0
     ultima_lista = 0.0
     fila_manut: list[str] = []
+    # Pedidos do app: olha a cada 2 s logo depois de um pedido (alguém usando o app), senão a cada 10 s.
+    # Antes era sempre a cada 2 s: ~40 mil consultas por dia ao Supabase só para achar a fila vazia.
+    ultimo_pedido = 0.0
+    ultima_checagem = 0.0
     while True:
         ini = time.time()
         try:
@@ -744,7 +748,14 @@ def cmd_varrer(args):
                     print("Pessoas (rosto) / correções:", e, flush=True)
             if v.precisa_redescobrir():
                 print(f"{time.strftime('%H:%M:%S')} procurando câmeras na rede... {v.redescobrir()} Intelbras achada(s)", flush=True)
-            pedidos = db.pedidos_pendentes()
+            espera = 2 if ini - ultimo_pedido < 300 else 10
+            if ini - ultima_checagem >= espera:
+                ultima_checagem = ini
+                pedidos = db.pedidos_pendentes()
+                if pedidos:
+                    ultimo_pedido = ini
+            else:
+                pedidos = []
             for ped in [p for p in pedidos if p.get("tipo") == "identificar"]:
                 try:
                     msg = v.identificar(ped["pet_id"], ped["camera_id"])

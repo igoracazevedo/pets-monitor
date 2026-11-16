@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet, type Zona } from '../lib/supabase'
+import { marcarComoObjeto, supabase, urlsDasFotos, type Avistamento, type Camera, type Pet, type Zona, COLUNAS_PET } from '../lib/supabase'
 import { useDados } from '../lib/dados'
 import { marcarLocal } from '../lib/objetos'
 import { useVisualizador, type Caixa, type ItemFoto } from './Visualizador'
@@ -30,7 +30,7 @@ export default function Historico({ admin }: { admin: boolean }) {
       if (pet === 'pessoas') q = q.eq('especie', 'pessoa')
       else if (pet === 'desconhecido') q = q.is('pet_id', null).neq('especie', 'pessoa')
       else if (pet !== 'todos') q = q.eq('pet_id', pet)
-      const [pets, cams, lista, gente, zonas] = await Promise.all([supabase.from('pm_pets').select('*').order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome'), supabase.from('pm_zonas').select('*')])
+      const [pets, cams, lista, gente, zonas] = await Promise.all([supabase.from('pm_pets').select(COLUNAS_PET).order('nome'), supabase.from('pm_cameras').select('*'), q, supabase.from('pm_pessoas').select('id,nome'), supabase.from('pm_zonas').select('*')])
       if (lista.error) throw new Error(lista.error.message)
       const l = semRepetidas((lista.data ?? []) as Avistamento[]).slice(0, 60)
       return { pets: (pets.data ?? []) as Pet[], cams: (cams.data ?? []) as Camera[], lista: l, fotos: await urlsDasFotos(l.slice(0, 40).map((a) => a.snapshot_path)), gente: Object.fromEntries(((gente.data ?? []) as { id: string; nome: string }[]).map((g) => [g.id, g.nome])), zonas: (zonas.data ?? []) as Zona[] }
